@@ -223,3 +223,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# FinAgent runtime artifacts
+*.db
+charts/
+memory_db/
+
+# Claude Code local settings
+.claude/

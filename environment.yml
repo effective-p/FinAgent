@@ -1,0 +1,17 @@
+name: finagent
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - anthropic==0.100.0
+    - pykrx==1.2.8
+    - pandas_ta==0.4.71b0
+    - mplfinance==0.12.10b0
+    - chromadb==1.5.9
+    - sentence-transformers==5.4.1
+    - pydantic==2.13.4
+    - feedparser==6.0.12
+    - pytest==9.0.3
