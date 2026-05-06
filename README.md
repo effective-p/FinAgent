@@ -104,6 +104,186 @@ python finagent/main.py \
 
 ---
 
+## 전체 파이프라인
+
+### 하루치 실행 흐름
+
+매 거래일마다 아래 6단계가 순서대로 실행된다.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  run_day(symbol, target_date, price_df, ...)                        │
+│                                                                     │
+│  1. 데이터 수집                                                      │
+│     ├─ pykrx          → price_df (OHLCV, look-ahead 차단)           │
+│     ├─ 네이버 RSS      → news_list (±7일 필터)                       │
+│     ├─ mplfinance     → kline_chart.png   (LLR용)                   │
+│     └─ mplfinance     → trading_chart.png (HLR용, BUY▲/SELL▽ 마커) │
+│                                                                     │
+│  2. Market Intelligence (Claude API)                                │
+│     ├─ 입력: news_list + price_df                                   │
+│     ├─ 출력: summary + short/medium/long_term_query                 │
+│     ├─ Diversified Retrieval: 3개 쿼리 → 과거 MI 최대 6개           │
+│     └─ 저장: memory["market_intelligence"]                          │
+│                                                                     │
+│  3. Low-Level Reflection (Claude Vision)                            │
+│     ├─ 입력: kline_chart.png + 가격변동률(1d/5d/10d/20d) + MI 요약   │
+│     ├─ 출력: 단기/중기/장기 가격변동 원인 분석 + query               │
+│     └─ 저장: memory["low_level_reflection"]                         │
+│                                                                     │
+│  4. High-Level Reflection (Claude Vision)                           │
+│     ├─ 입력: trading_chart.png + 최근 14거래 내역 + MI + LLR        │
+│     ├─ 출력: 결정 평가 + 개선 방안 + summary + query                │
+│     └─ 저장: memory["high_level_reflection"]                        │
+│                                                                     │
+│  5. Decision Making (Claude API)                                    │
+│     ├─ 입력: MI + LLR + HLR + 기술적지표(MACD/KDJ/ZMR) + 포트폴리오 │
+│     └─ 출력: BUY / SELL / HOLD + reasoning                         │
+│                                                                     │
+│  6. 거래 실행                                                        │
+│     └─ Portfolio.execute() → SQLite 기록                            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 모듈 간 데이터 흐름
+
+```
+price_df ──┬──────────────────────────────────────────────────────────────────┐
+           │                                                                  │
+           ▼                                                                  │
+     DataFetcher                                                              │
+      ├─ news_list ──────────────────────┐                                   │
+      ├─ kline_chart.png ────────────────┼──────────┐                        │
+      └─ trading_chart.png ─────────────┼───────────┼──────────┐             │
+                                        │           │           │             │
+                                        ▼           │           │             │
+                              MarketIntelligence    │           │             │
+                                ├─ latest_summary ──┼───────────┼─────────────┼──┐
+                                ├─ past_summary     │           │             │  │
+                                └─ queries ─────────┼───────────┼─────────────┼──┤
+                                                    │           │             │  │
+                                        ┌───────────┘           │             │  │
+                                        ▼                       │             │  │
+                              LowLevelReflection                │             │  │
+                                ├─ short_term_reasoning ────────┼─────────────┼──┤
+                                ├─ medium_term_reasoning ───────┼─────────────┼──┤
+                                ├─ long_term_reasoning ─────────┼─────────────┼──┤
+                                └─ query ───────────────────────┼─────────────┼──┤
+                                                                │             │  │
+                                               ┌────────────────┘             │  │
+                                               ▼                              │  │
+                                     HighLevelReflection ◄── past_actions ◄───┘  │
+                                       ├─ reasoning ──────────────────────────┐  │
+                                       ├─ improvement ────────────────────────┤  │
+                                       └─ query ──────────────────────────────┤  │
+                                                                              │  │
+                                                              ┌───────────────┘  │
+                                                              ▼                  │
+                                                      DecisionMaking ◄───────────┘
+                                                        ├─ TechnicalSignals (내부 계산)
+                                                        └─ Decision (BUY/SELL/HOLD)
+                                                                    │
+                                                                    ▼
+                                                              Portfolio.execute()
+```
+
+---
+
+### 메모리 시스템 상세
+
+ChromaDB에 3개의 독립 컬렉션을 유지하며, 각 모듈이 자신의 컬렉션에만 읽고 쓴다.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  MemoryStore (ChromaDB + all-MiniLM-L6-v2 임베딩)                │
+│                                                                  │
+│  ┌─────────────────────┐  ┌──────────────────────┐  ┌─────────┐ │
+│  │ market_intelligence │  │ low_level_reflection │  │  high_  │ │
+│  │                     │  │                      │  │  level_ │ │
+│  │  저장: MI summary   │  │  저장: 단기+중기+장기  │  │  reflec │ │
+│  │  메타: symbol, date,│  │  reasoning 합산 텍스트 │  │  tion   │ │
+│  │  short/medium/long  │  │  메타: symbol, date  │  │         │ │
+│  │  term_query         │  │                      │  │  저장:  │ │
+│  └─────────────────────┘  └──────────────────────┘  │  summary│ │
+│           ↑ ↓                      ↑ ↓               └─────────┘ │
+│           MI                      LLR                    ↑ ↓     │
+│    (Diversified Retrieval)   (short_term_query로 검색)    HLR     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Diversified Retrieval** — MarketIntelligence의 핵심 메커니즘:
+
+```python
+# 단기·중기·장기 쿼리 3개로 독립 검색 → 중복 제거 → 최대 6개 과거 기억 수집
+past_docs = memory.diversified_retrieve(
+    "market_intelligence",
+    queries=[short_term_q, medium_term_q, long_term_q],
+    top_k_each=2,
+)
+```
+
+---
+
+### 기술적 지표 주입 흐름
+
+```
+price_df
+    │
+    ▼
+get_technical_signals(df)
+    ├─ MACD (12/26/9)   → golden/dead cross 감지 → "BUY signal (golden cross, MACD=0.12)"
+    ├─ KDJ + RSI        → 과매수/과매도 감지      → "SELL signal (K=82, RSI=74, overbought)"
+    └─ ZMR (z-score)    → MA20 대비 이탈 감지     → "HOLD (z-score=0.31, normal range)"
+              │
+              └─ signal_text (3줄 합산)
+                          │
+                          ▼
+              DecisionMaking 프롬프트에 직접 주입
+```
+
+---
+
+### 백테스팅 루프
+
+```
+run_backtest(symbol, start, end)
+│
+├─ 전체 기간 + lookback(90일) 한 번에 수집
+│  price_df = fetcher.get_price_data(lookback_days = (end-start).days + 90)
+│
+├─ 거래일 필터링
+│  trading_days = price_df[(start ≤ index ≤ end)]
+│
+└─ for target_date in trading_days:
+       try:
+           run_day(...)          ← 예외 발생 시 해당 일 skip, 다음 날 계속
+       except:
+           logger.exception(...)
+│
+└─ 성과 측정
+   ├─ compute_equity_curve(trades, price_df, initial_cash)
+   ├─ compute_benchmark(price_df, initial_cash)    ← Buy & Hold
+   ├─ compute_performance(equity_curve)            ← Sharpe, MDD, 연환산 수익률
+   └─ plot_performance(...)                        → charts/performance_{symbol}.png
+```
+
+---
+
+### Look-ahead Bias 방지
+
+백테스팅에서 미래 데이터가 현재 결정에 새어들어가는 것을 막기 위해,  
+`run_day` 내부에서 `target_date` 이후 데이터를 잘라낸다.
+
+```python
+# run_day 내부
+df = price_df.loc[:pd.Timestamp(target_date)]  # target_date 이전만 사용
+current_price = float(df["Close"].iloc[-1])     # 당일 종가로 거래 실행
+```
+
+---
+
 ## 프로젝트 구조
 
 ```
