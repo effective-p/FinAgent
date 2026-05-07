@@ -5,6 +5,21 @@
 논문 [arxiv 2402.18485](https://arxiv.org/abs/2402.18485) 기반의 멀티모달 LLM 트레이딩 에이전트.  
 뉴스·가격 데이터 분석, 캔들차트 Vision 반성, 메모리 기반 학습, 기술적 지표 주입을 결합한 백테스팅 파이프라인입니다.
 
+![The overall architecture of FinAgent. The ordinal numbers in the figure represent the order of execution, where
+augmented tools are implemented with the decision-making module.](assets/architecture.png)
+
+[![Stars](https://img.shields.io/github/stars/effective-p/FinAgent?style=flat)](https://github.com/effective-p/FinAgent/stargazers)
+[![Forks](https://img.shields.io/github/forks/effective-p/FinAgent?style=flat)](https://github.com/effective-p/FinAgent/network/members)
+[![Contributors](https://img.shields.io/github/contributors/effective-p/FinAgent?style=flat)](https://github.com/effective-p/FinAgent/graphs/contributors)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Shell](https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white)
+![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white)
+![Python](https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white)
+![Go](https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white)
+![Java](https://img.shields.io/badge/-Java-ED8B00?logo=openjdk&logoColor=white)
+![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
+![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
+
 ---
 
 ## 아키텍처
