@@ -228,6 +228,7 @@ __marimo__/
 *.db
 charts/
 memory_db/
+job_data/
 
 # Claude Code local settings
 .claude/

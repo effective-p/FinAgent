@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinAgent — 멀티모달 AI 트레이딩 에이전트</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <h1>Fin<span>Agent</span></h1>
+      <p>멀티모달 AI 기반 한국 주식 백테스팅 대시보드</p>
+    </header>
+
+    <!-- ── 에러 배너 ── -->
+    <div class="error-banner" id="error-banner">
+      <strong>오류:</strong> <span id="error-msg"></span>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         패널 1 — 입력 폼
+    ══════════════════════════════════════════════ -->
+    <div id="panel-form">
+      <div class="card">
+        <div class="card-title">백테스트 설정</div>
+        <form id="backtest-form">
+          <div class="form-grid">
+
+            <div class="form-group">
+              <label for="symbol">종목코드</label>
+              <input id="symbol" name="symbol" type="text"
+                     placeholder="예: 005930" required
+                     pattern="[0-9]{6}" title="6자리 KRX 종목코드" />
+            </div>
+
+            <div class="form-group">
+              <label for="stock_name">종목명 (한글)</label>
+              <input id="stock_name" name="stock_name" type="text"
+                     placeholder="예: 삼성전자" required />
+            </div>
+
+            <div class="form-group">
+              <label for="start">시작일</label>
+              <input id="start" name="start" type="date"
+                     value="2024-01-02" required />
+            </div>
+
+            <div class="form-group">
+              <label for="end">종료일</label>
+              <input id="end" name="end" type="date"
+                     value="2024-03-29" required />
+            </div>
+
+            <div class="form-group">
+              <label for="initial_cash">초기 자금 (원)</label>
+              <input id="initial_cash" name="initial_cash" type="number"
+                     value="10000000" min="100000" step="100000" required />
+            </div>
+
+            <div class="form-group">
+              <label for="trader_preference">투자 성향</label>
+              <select id="trader_preference" name="trader_preference">
+                <option value="aggressive">공격적 (Aggressive)</option>
+                <option value="moderate" selected>중립 (Moderate)</option>
+                <option value="conservative">보수적 (Conservative)</option>
+              </select>
+            </div>
+
+          </div><!-- /.form-grid -->
+
+          <button type="submit" class="btn" id="submit-btn">
+            백테스트 실행
+          </button>
+        </form>
+      </div><!-- /.card -->
+    </div><!-- /#panel-form -->
+
+    <!-- ══════════════════════════════════════════════
+         패널 2 — 실시간 진행
+    ══════════════════════════════════════════════ -->
+    <div id="panel-progress">
+      <div class="card">
+        <div class="card-title">백테스트 진행 중…</div>
+
+        <div class="progress-header">
+          <span class="progress-label" id="progress-label">준비 중…</span>
+          <span class="progress-pct" id="progress-pct">0%</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+
+        <div class="log-list" id="log-list"></div>
+      </div>
+    </div><!-- /#panel-progress -->
+
+    <!-- ══════════════════════════════════════════════
+         패널 3 — 결과
+    ══════════════════════════════════════════════ -->
+    <div id="panel-results">
+
+      <!-- KPI 카드 -->
+      <div class="card">
+        <div class="card-title">성과 지표</div>
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">총 수익률</div>
+            <div class="kpi-value" id="kpi-total-return">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">연간 환산 수익률</div>
+            <div class="kpi-value" id="kpi-annual-return">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Sharpe Ratio</div>
+            <div class="kpi-value" id="kpi-sharpe">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">최대 낙폭 (MDD)</div>
+            <div class="kpi-value" id="kpi-mdd">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">연간 변동성</div>
+            <div class="kpi-value" id="kpi-vol">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Buy&Hold 초과수익</div>
+            <div class="kpi-value" id="kpi-excess">—</div>
+          </div>
+        </div>
+
+        <!-- 거래 횟수 -->
+        <div class="trade-counts">
+          <div class="trade-count-item">
+            <div class="cnt cnt-buy" id="cnt-buy">0</div>
+            <div class="lbl">매수 (BUY)</div>
+          </div>
+          <div class="trade-count-item">
+            <div class="cnt cnt-sell" id="cnt-sell">0</div>
+            <div class="lbl">매도 (SELL)</div>
+          </div>
+          <div class="trade-count-item">
+            <div class="cnt cnt-hold" id="cnt-hold">0</div>
+            <div class="lbl">보유 (HOLD)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 성과 차트 -->
+      <div class="card">
+        <div class="card-title">성과 차트 (FinAgent vs Buy&Hold)</div>
+        <div class="perf-chart">
+          <img id="perf-img" src="" alt="성과 차트 로딩 중…" />
+        </div>
+      </div>
+
+      <!-- 거래 내역 -->
+      <div class="card">
+        <div class="card-title">매매 내역 (BUY / SELL)</div>
+        <div class="trade-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>액션</th>
+                <th>판단 근거</th>
+              </tr>
+            </thead>
+            <tbody id="trade-tbody">
+              <tr><td colspan="3" style="text-align:center;color:var(--text-muted)">로딩 중…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 일별 차트 브라우저 -->
+      <div class="card" id="chart-browser" style="display:none">
+        <div class="card-title">일별 차트 보기</div>
+        <div class="chart-browser">
+          <div class="chart-tabs">
+            <button class="tab-btn active" id="tab-kline">Kline (캔들)</button>
+            <button class="tab-btn" id="tab-trading">Trading (매매 마커)</button>
+          </div>
+          <div class="chart-selector">
+            <label>날짜 선택</label>
+            <select id="chart-date-select"></select>
+          </div>
+          <div class="chart-img-wrap">
+            <img id="daily-chart-img" src="" alt="" style="display:none" />
+            <div class="no-chart" id="no-chart-msg">차트를 선택하세요.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 새 백테스트 버튼 -->
+      <button class="btn" id="btn-new" style="margin-top:8px">
+        새 백테스트 실행
+      </button>
+
+    </div><!-- /#panel-results -->
+
+  </div><!-- /.container -->
+
+  <script src="/app.js"></script>
+</body>
+</html>

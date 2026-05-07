@@ -116,8 +116,14 @@ def run_backtest(
     db_path: str = "portfolio.db",
     memory_dir: str = "memory_db",
     chart_dir: str = "charts",
+    progress_callback=None,
 ) -> dict:
-    """start ~ end 기간 동안 백테스팅을 실행하고 결과를 반환한다."""
+    """start ~ end 기간 동안 백테스팅을 실행하고 결과를 반환한다.
+
+    Args:
+        progress_callback: 각 거래일 완료 시 호출되는 콜백.
+            signature: (day_index, total_days, current_date, action, reasoning) -> None
+    """
     fetcher = DataFetcher(chart_dir=chart_dir)
     memory = MemoryStore(persist_dir=memory_dir)
     portfolio = Portfolio(symbol=symbol, initial_cash=initial_cash, db_path=db_path)
@@ -144,9 +150,11 @@ def run_backtest(
 
     logger.info("Running backtest: %s → %s (%d days)", start, end, len(trading_days))
 
-    for ts in trading_days:
+    total_days = len(trading_days)
+    for i, ts in enumerate(trading_days):
+        decision = None
         try:
-            run_day(
+            decision = run_day(
                 symbol=symbol,
                 stock_name=stock_name,
                 target_date=ts.date(),
@@ -161,6 +169,18 @@ def run_backtest(
             )
         except Exception:
             logger.exception("Error on %s, skipping day", ts.date())
+
+        if progress_callback and decision:
+            try:
+                progress_callback(
+                    day_index=i + 1,
+                    total_days=total_days,
+                    current_date=ts.date(),
+                    action=decision.action,
+                    reasoning=decision.reasoning,
+                )
+            except Exception:
+                logger.exception("progress_callback error on %s", ts.date())
 
     # 최종 결과
     backtest_df = price_df.loc[

@@ -7,3 +7,6 @@ sentence-transformers==5.4.1
 pydantic==2.13.4
 feedparser==6.0.12
 pytest==9.0.3
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
