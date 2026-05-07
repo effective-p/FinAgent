@@ -82,3 +82,9 @@ Per the plan, implement in this sequence:
 5. `HighLevelReflection` (Vision)
 6. `DecisionMakingModule` + full pipeline integration
 7. Backtesting + performance measurement
+
+## Do
+- Whenever the Python package is modified, update @requirements.txt and @environment.yml to keep them up to date.
+- Push directly to 'origin/main' without a PR when the user runs 'git push'.
+
+## Don't do
