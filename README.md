@@ -55,7 +55,13 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ---
 
-## 백테스팅 실행
+## 실행 모드
+
+FinAgent는 두 가지 실행 모드를 지원합니다. 위 환경 생성에 의해서 만들어지 vitual environment 상에서 실행하는 것을 권장 합니다.
+
+---
+
+### 모드 1 — CLI (터미널 직접 실행)
 
 ```bash
 python finagent/main.py \
@@ -78,6 +84,38 @@ python finagent/main.py \
 | `--db-path` | `portfolio.db` | SQLite 파일 경로 |
 | `--memory-dir` | `memory_db` | ChromaDB 저장 디렉토리 |
 | `--chart-dir` | `charts` | 차트 이미지 저장 디렉토리 |
+
+---
+
+### 모드 2 — Web UI (브라우저 기반)
+
+백테스트 파라미터 입력부터 실시간 진행 상황 확인, 결과 시각화까지 브라우저에서 처리합니다.
+
+```bash
+# 서버 실행
+export ANTHROPIC_API_KEY=sk-ant-...
+python run_web.py
+```
+
+브라우저에서 `http://localhost:8000` 접속 후 사용합니다.
+
+#### 기능
+
+| 단계 | 내용 |
+|------|------|
+| **폼 입력** | 종목코드, 종목명, 기간, 초기자금, 트레이더 성향 설정 |
+| **실시간 진행** | 거래일마다 진행 바 업데이트 + BUY/SELL/HOLD 로그 스트리밍 |
+| **결과 대시보드** | KPI 카드, 성과 차트, 거래 내역 테이블, 일별 차트 브라우저 |
+
+#### 동작 방식
+
+- 백테스트는 백그라운드 스레드에서 실행되며, 진행 상황은 **SSE(Server-Sent Events)** 로 실시간 전송됩니다.
+- 브라우저 탭을 닫았다가 재접속해도 누락된 이벤트를 자동 리플레이합니다.
+- 각 백테스트 실행은 `job_data/{job_id}/` 에 독립적으로 저장됩니다 (SQLite·ChromaDB 충돌 방지).
+
+> **주의**: `workers=1` 고정 (인-프로세스 Job 저장소 사용). 동시에 여러 백테스트를 실행하면 순차 처리됩니다.
+
+---
 
 ### 결과 예시
 
@@ -307,6 +345,27 @@ finagent/
 │   └── metrics.py                   # Equity curve, Sharpe, MDD, 벤치마크, 성과 차트
 └── main.py                          # 백테스팅 루프 (run_day / run_backtest)
 
+web/                                 # Web UI (FastAPI + SSE)
+├── app.py                           # FastAPI 앱 팩토리
+├── job_store.py                     # 인메모리 Job 상태 관리
+├── schemas.py                       # API 요청/응답 Pydantic 모델
+├── routes/
+│   ├── backtest.py                  # POST /api/backtest, GET /api/backtest/{id}/stream
+│   ├── results.py                   # GET /api/backtest/{id}/result, /trades
+│   └── charts.py                   # GET /charts/{job_id}/{filename}
+└── static/
+    ├── index.html                   # 단일 페이지 UI (폼 → 진행 → 결과)
+    ├── style.css                    # 다크 테마
+    └── app.js                       # SSE EventSource 클라이언트
+
+run_web.py                           # Web UI 서버 진입점
+
+job_data/                            # 런타임 생성 (gitignore)
+└── {job_id}/
+    ├── portfolio.db
+    ├── memory_db/
+    └── charts/
+
 tests/
 ├── test_step1.py   # DataFetcher, Portfolio, TechnicalIndicators
 ├── test_step2.py   # MemoryStore
@@ -362,6 +421,8 @@ MarketIntelligence가 `short_term_query` / `medium_term_query` / `long_term_quer
 | `sentence-transformers` | 로컬 임베딩 (all-MiniLM-L6-v2) |
 | `feedparser` | 네이버 뉴스 RSS 수집 |
 | `pydantic` | 모듈 간 데이터 스키마 |
+| `fastapi` | Web UI REST API 서버 (SSE 포함) |
+| `uvicorn` | ASGI 서버 (Web UI 실행) |
 
 ---
 
