@@ -53,7 +53,7 @@ class DataFetcher:
         return df
 
     # ------------------------------------------------------------------
-    # 뉴스 (네이버 뉴스 RSS)
+    # 뉴스 (구글 뉴스 RSS)
     # ------------------------------------------------------------------
 
     def get_news(
@@ -63,7 +63,7 @@ class DataFetcher:
         target_date: date,
         max_items: int = 10,
     ) -> List[NewsItem]:
-        """네이버 뉴스 RSS에서 종목 관련 뉴스를 수집한다.
+        """뉴스 RSS에서 종목 관련 뉴스를 수집한다.
 
         Args:
             symbol: 티커 (로깅용, 실제 검색엔 미사용)
@@ -71,13 +71,13 @@ class DataFetcher:
             target_date: 기준일. ±7일 이내 뉴스만 반환
             max_items: 최대 반환 개수
         """
-        query = quote(f"{stock_name} 주가")
-        url = f"https://search.naver.com/search.naver?where=rss&query={query}"
+        query = quote(f"{stock_name}")
+        url = f"https://news.google.com/rss/search?hl=ko&gl=KR&ie=UTF-8&q={query}"
 
         try:
             feed = feedparser.parse(url)
         except Exception as exc:
-            logger.warning("Naver RSS fetch failed for %s: %s", stock_name, exc)
+            logger.warning("News RSS fetch failed for %s: %s", stock_name, exc)
             return []
 
         news: List[NewsItem] = []

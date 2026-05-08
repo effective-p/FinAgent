@@ -29,7 +29,7 @@ DataFetcher → MarketIntelligence → LowLevelReflection → HighLevelReflectio
 
 | 모듈 | 역할 |
 |------|------|
-| `DataFetcher` | pykrx 주가 수집, 네이버 뉴스 RSS, mplfinance 차트 생성 |
+| `DataFetcher` | pykrx 주가 수집, 구글 뉴스 RSS, mplfinance 차트 생성 |
 | `MemoryStore` | ChromaDB 3-컬렉션 (MI / LLR / HLR), Diversified Retrieval |
 | `MarketIntelligenceModule` | 최신 뉴스+가격 Claude 분석, 단/중/장기 쿼리 생성 |
 | `LowLevelReflectionModule` | Kline 차트 Vision + 가격변동률 → 단/중/장기 원인 분석 |
@@ -172,7 +172,7 @@ python run_web.py
 │                                                                     │
 │  1. 데이터 수집                                                      │
 │     ├─ pykrx          → price_df (OHLCV, look-ahead 차단)           │
-│     ├─ 네이버 RSS      → news_list (±7일 필터)                       │
+│     ├─ 구글 RSS      → news_list (±7일 필터)                       │
 │     ├─ mplfinance     → kline_chart.png   (LLR용)                   │
 │     └─ mplfinance     → trading_chart.png (HLR용, BUY▲/SELL▽ 마커) │
 │                                                                     │
@@ -345,7 +345,7 @@ current_price = float(df["Close"].iloc[-1])     # 당일 종가로 거래 실행
 ```
 finagent/
 ├── data/
-│   └── fetcher.py                   # pykrx 주가, 네이버 RSS 뉴스, mplfinance 차트
+│   └── fetcher.py                   # pykrx 주가, 구글 RSS 뉴스, mplfinance 차트
 ├── memory/
 │   └── store.py                     # ChromaDB 래퍼 (add / retrieve / diversified_retrieve)
 ├── modules/
@@ -437,7 +437,7 @@ MarketIntelligence가 `short_term_query` / `medium_term_query` / `long_term_quer
 | `mplfinance` | Kline / Trading 차트 생성 |
 | `chromadb` | 벡터 DB (메모리 저장·검색) |
 | `sentence-transformers` | 로컬 임베딩 (all-MiniLM-L6-v2) |
-| `feedparser` | 네이버 뉴스 RSS 수집 |
+| `feedparser` | 구글 뉴스 RSS 수집 |
 | `pydantic` | 모듈 간 데이터 스키마 |
 | `fastapi` | Web UI REST API 서버 (SSE 포함) |
 | `uvicorn` | ASGI 서버 (Web UI 실행) |

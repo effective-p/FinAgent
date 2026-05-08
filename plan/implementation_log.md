@@ -29,7 +29,7 @@ pip install anthropic pykrx pandas_ta mplfinance chromadb \
 |------|------|------|
 | Python 버전 | 3.12 | pandas_ta 0.4.x 요구사항 |
 | 주가 데이터 | pykrx | yfinance 대신 KRX 한국 주식 전용, 무료 |
-| 뉴스 데이터 | 네이버 RSS + feedparser | API 키 불필요, 한국 종목 뉴스 품질 우수 |
+| 뉴스 데이터 | 구글 RSS + feedparser | API 키 불필요, 한국 종목 뉴스 품질 우수 |
 | LLM | claude-sonnet-4-6 | 프로젝트 기본 모델 |
 
 ---
@@ -70,7 +70,7 @@ class PortfolioState(BaseModel):
 
 #### 의도
 - **주가**: pykrx로 KRX 종목 OHLCV를 수집한다. 컬럼명을 `시가→Open` 등 영문으로 rename하여 mplfinance/pandas_ta와 호환한다.
-- **뉴스**: 네이버 뉴스 RSS를 feedparser로 파싱한다. 종목명(한글)을 검색어로 쓰며, `target_date ±7일` 필터를 클라이언트에서 적용한다.
+- **뉴스**: 구글 뉴스 RSS를 feedparser로 파싱한다. 종목명(한글)을 검색어로 쓰며, `target_date ±7일` 필터를 클라이언트에서 적용한다.
 - **차트 2종**: Kline(캔들)은 LLR에, Trading(라인+마커)은 HLR에 사용한다.
 
 #### 구현
@@ -646,7 +646,7 @@ python finagent/main.py \
 | 결정 | 선택 | 대안 | 이유 |
 |------|------|------|------|
 | 주가 데이터 | pykrx | yfinance | KRX 한국 주식 전용, 무료 |
-| 뉴스 소스 | 네이버 RSS | Finnhub, NewsAPI | API 키 불필요, 한국 주식 뉴스 품질 |
+| 뉴스 소스 | 구글 RSS | Finnhub, NewsAPI | API 키 불필요, 한국 주식 뉴스 품질 |
 | 벡터 DB | ChromaDB | FAISS | 로컬 실행, 메타데이터 필터, 단순한 API |
 | 임베딩 | all-MiniLM-L6-v2 | OpenAI ada | 무료, 로컬, 다국어 지원 |
 | LLM | claude-sonnet-4-6 | claude-opus | 비용/성능 균형 |

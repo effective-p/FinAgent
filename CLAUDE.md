@@ -61,8 +61,8 @@ MarketIntelligence generates three separate retrieval queries (`short_term_query
 Rather than implementing the paper's full expert guidance system, `tools/technical_indicators.py` converts MACD, KDJ+RSI, and ZMR calculations into human-readable signal strings that are injected into the Decision Making prompt.
 
 ### News Source
-News is fetched from Naver News RSS (`feedparser`) using the stock's Korean name. No API key required.
-- RSS URL pattern: `https://search.naver.com/search.naver?where=rss&query={종목명+주가}`
+News is fetched from Google News RSS (`feedparser`) using the stock's Korean name. No API key required.
+- RSS URL pattern: `https://news.google.com/rss/search?hl=ko&gl=KR&ie=UTF-8&q={종목명+주가}`
 - `DataFetcher.get_news()` accepts `stock_name` (Korean name, e.g. "삼성전자") alongside `symbol`
 - Client-side date filter: only news within ±7 days of `target_date` is returned
 

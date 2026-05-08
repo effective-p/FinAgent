@@ -268,7 +268,7 @@ def run_step(symbol, date, portfolio):
 ```
 finagent/
 ├── data/
-│   └── fetcher.py                   # pykrx + 네이버뉴스 + 차트 생성
+│   └── fetcher.py                   # pykrx + 뉴스 + 차트 생성
 ├── memory/
 │   └── store.py                     # ChromaDB 래퍼
 ├── modules/
