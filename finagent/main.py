@@ -228,12 +228,13 @@ def run_backtest(
         if not benchmark.empty else 0.0
     )
     basic = portfolio.get_returns(float(backtest_df["Close"].iloc[-1]), initial_cash)
-    _print_summary(symbol, start, end, basic, perf, bm_return, chart_path)
+    _print_summary(symbol, stock_name, start, end, basic, perf, bm_return, chart_path)
     return {**basic, **perf, "benchmark_return_pct": round(bm_return, 2)}
 
 
 def _print_summary(
     symbol: str,
+    stock_name: str,
     start: date,
     end: date,
     basic: dict,
@@ -243,7 +244,7 @@ def _print_summary(
 ) -> None:
     W = 52
     print("\n" + "=" * W)
-    print(f"  백테스팅 결과: {symbol}  ({start} ~ {end})")
+    print(f"  백테스팅 결과: {symbol} [{stock_name}] ({start} ~ {end})")
     print("=" * W)
     print(f"  최종 자산:          {basic.get('total_value', 0):>16,.0f}원")
     print(f"  총 수익률:          {perf.get('total_return_pct', 0):>+15.2f}%")

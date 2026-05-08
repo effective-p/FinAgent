@@ -158,6 +158,39 @@ select option { background: var(--bg); }
 /* ── 결과 패널 ── */
 #panel-results { display: none; }
 
+/* ── 백테스트 대상 정보 ── */
+.backtest-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.backtest-subject {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.backtest-stock-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.backtest-symbol {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.backtest-period {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

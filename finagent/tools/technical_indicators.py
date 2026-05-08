@@ -14,7 +14,7 @@ def get_technical_signals(df: pd.DataFrame) -> TechnicalSignals:
     """OHLCV DataFrame으로부터 MACD / KDJ+RSI / ZMR 시그널을 계산한다.
 
     Args:
-        df: yfinance 형식의 OHLCV DataFrame (최소 26봉 이상 권장)
+        df: pykrx 형식의 OHLCV DataFrame (최소 26봉 이상 권장)
 
     Returns:
         TechnicalSignals (각 시그널 + LLM 주입용 텍스트)

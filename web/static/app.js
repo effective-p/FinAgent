@@ -192,6 +192,11 @@ async function handleDone(result, formData) {
 
 // ── 결과 렌더링 ───────────────────────────────────────────────────────────────
 function renderResults(r, fd) {
+  // 백테스트 대상 정보
+  document.getElementById('info-stock-name').textContent = fd.stock_name;
+  document.getElementById('info-symbol').textContent = fd.symbol;
+  document.getElementById('info-period').textContent = `${fd.start} ~ ${fd.end}`;
+
   // KPI 카드
   setKpi('kpi-total-return',  formatPct(r.total_return_pct),   r.total_return_pct);
   setKpi('kpi-annual-return', formatPct(r.annualized_return_pct), r.annualized_return_pct);
