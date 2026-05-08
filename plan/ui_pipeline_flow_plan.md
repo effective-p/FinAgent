@@ -26,7 +26,7 @@ OHLCV 수집 (루프 외)  →  ┌───────────────
 | 단계 ID              | 표시명    | 아이콘 | 타입   | 설명                       |
 |----------------------|-----------|--------|--------|----------------------------|
 | `ohlcv_fetch`        | OHLCV 수집 | 📈    | API    | KRX pykrx 가격 데이터 수집 |
-| `news_fetch`         | 뉴스 수집  | 📰    | API    | Naver RSS 뉴스 피드        |
+| `news_fetch`         | 뉴스 수집  | 📰    | API    | Google RSS 뉴스 피드        |
 | `market_intelligence`| 시장 분석  | 🧠    | AI     | MI 모듈 Claude 호출        |
 | `low_level_reflection`| 기술 분석 | 📊    | AI     | LLR 모듈 Claude + 차트     |
 | `high_level_reflection`| 전략 반성| 🔍   | AI     | HLR 모듈 Claude + 차트     |

@@ -28,7 +28,7 @@ DataFetcher → MarketIntelligence → LowLevelReflection → HighLevelReflectio
 **Planned file structure:**
 ```
 finagent/
-├── data/fetcher.py              # pykrx prices (KRX), Naver RSS news, mplfinance charts
+├── data/fetcher.py              # pykrx prices (KRX), Google RSS news, mplfinance charts
 ├── memory/store.py              # ChromaDB wrapper (3 collections below)
 ├── modules/
 │   ├── market_intelligence.py   # Analyzes latest news+prices; diversified retrieval

@@ -81,7 +81,7 @@ class DataFetcher:
         # 컬럼 rename: 시가→Open, 고가→High, 저가→Low, 종가→Close, 거래량→Volume
 
     def get_news(self, symbol, stock_name, target_date, max_items=10) -> List[NewsItem]:
-        # RSS: https://search.naver.com/search.naver?where=rss&query={종목명+주가}
+        # RSS: https://news.google.com/rss/search?hl=ko&gl=KR&ie=UTF-8&q={종목명+주가}
         # ±7일 필터 (클라이언트 사이드)
 
     def plot_kline_chart(self, df, target_date, symbol, window=30) -> str:

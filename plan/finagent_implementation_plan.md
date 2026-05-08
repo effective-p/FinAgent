@@ -31,7 +31,7 @@
 
 ### 데이터 수집
 - `krx_price` — pykrx로 OHLCV + 등락률 반환
-- `naver_news` — 종목명 기반 네이버 뉴스 RSS 
+- `google_news` — 종목명 기반 뉴스 RSS 
 - `pandas_ta` — 기술적 지표 (MACD, KDJ, RSI, Bollinger Bands)
 
 ### 시각화 (Kline/Trading Chart)
@@ -51,7 +51,7 @@
 # data_layer.py
 class DataFetcher:
     def get_price_data(symbol, lookback_days)  # krx_price
-    def get_news(symbol, date)                 # naver_news
+    def get_news(symbol, date)                 # google_news
     def get_technical_indicators(df)           # pandas_ta로 MACD, RSI, KDJ, BB 계산
     def plot_kline_chart(df) -> image_path     # mplfinance → PNG 저장
     def plot_trading_chart(df, actions) -> image_path
@@ -306,7 +306,7 @@ finagent/
 | 용도 | 라이브러리 / API | 비용 |
 |------|-----------------|------|
 | 주가 데이터 | `pykrx` | 무료 |
-| 뉴스 데이터 | `naver_news` | 무료 |
+| 뉴스 데이터 | `google_news` | 무료 |
 | 기술적 지표 | `pandas_ta` | 무료 |
 | Kline 차트 | `mplfinance` | 무료 |
 | LLM (텍스트+비전) | Anthropic Claude API | 유료 |
