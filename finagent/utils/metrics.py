@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import List
 
@@ -10,15 +11,10 @@ import pandas as pd
 
 from finagent.utils.schemas import TradeAction
 
+logger = logging.getLogger(__name__)
+
 matplotlib.use("Agg")
 
-# macOS 한글 폰트 설정 (없으면 기본 폰트 유지)
-for _font in ["AppleGothic", "NanumGothic", "Malgun Gothic", "DejaVu Sans"]:
-    try:
-        matplotlib.rcParams["font.family"] = _font
-        break
-    except Exception:
-        continue
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 TRADING_DAYS_PER_YEAR = 252
@@ -143,6 +139,16 @@ def plot_performance(
     output_path: str,
 ) -> str:
     """FinAgent 자산곡선 vs Buy&Hold + Drawdown 차트를 PNG로 저장한다."""
+
+    # macOS 한글 폰트 설정 (없으면 기본 폰트 유지)
+    for _font in ["Pretendard"]:
+        try:
+            plt.rcParams["font.family"] = _font
+            break
+        except Exception:
+            logger.info("Font setting error")
+            continue
+
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(14, 8),
         gridspec_kw={"height_ratios": [3, 1]},
