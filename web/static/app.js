@@ -1,6 +1,15 @@
 /* FinAgent Web UI — SSE 클라이언트 + DOM 조작 */
 'use strict';
 
+// ── 날짜 초기값 설정 ──────────────────────────────────────────────────────────
+(function setDefaultDates() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const ymd = yesterday.toISOString().slice(0, 10);
+  const endInput = document.getElementById('end');
+  if (endInput && !endInput.value) endInput.value = ymd;
+})();
+
 // ── 상태 ──────────────────────────────────────────────────────────────────────
 let currentJobId = null;
 let eventSource = null;
