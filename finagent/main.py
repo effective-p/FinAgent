@@ -55,8 +55,17 @@ def run_day(
     hlr_module: HighLevelReflectionModule,
     dm_module: DecisionMakingModule,
     trader_preference: str = "moderate",
+    step_callback=None,
 ) -> Decision:
     """하루치 전체 파이프라인을 실행하고 Decision을 반환한다."""
+
+    def _step(name: str) -> None:
+        if step_callback:
+            try:
+                step_callback(name)
+            except Exception:
+                pass
+
     logger.info("=== %s | %s ===", symbol, target_date)
 
     # look-ahead bias 방지: target_date 이전 데이터만 사용
@@ -64,6 +73,7 @@ def run_day(
     current_price = float(df["Close"].iloc[-1])
 
     # 1. 데이터 수집
+    _step("news_fetch")
     news = fetcher.get_news(symbol, stock_name, target_date)
     kline_path = fetcher.plot_kline_chart(df, target_date, symbol)
     trading_path = fetcher.plot_trading_chart(
@@ -71,18 +81,22 @@ def run_day(
     )
 
     # 2. Market Intelligence
+    _step("market_intelligence")
     mi_result = mi_module.run(symbol, target_date, df, news)
 
     # 3. Low-Level Reflection
+    _step("low_level_reflection")
     llr_result = llr_module.run(symbol, target_date, df, kline_path, mi_result)
 
     # 4. High-Level Reflection
+    _step("high_level_reflection")
     hlr_result = hlr_module.run(
         symbol, target_date, trading_path,
         portfolio.recent_actions(14), mi_result, llr_result,
     )
 
     # 5. Decision Making
+    _step("decision_making")
     portfolio_state = portfolio.get_state(current_price)
     decision = dm_module.run(
         symbol, target_date, df,
@@ -91,6 +105,7 @@ def run_day(
     )
 
     # 6. 거래 실행
+    _step("trade_execution")
     portfolio.execute(decision.action, current_price, target_date, decision.reasoning)
 
     logger.info(
@@ -117,12 +132,15 @@ def run_backtest(
     memory_dir: str = "memory_db",
     chart_dir: str = "charts",
     progress_callback=None,
+    step_callback=None,
 ) -> dict:
     """start ~ end 기간 동안 백테스팅을 실행하고 결과를 반환한다.
 
     Args:
         progress_callback: 각 거래일 완료 시 호출되는 콜백.
             signature: (day_index, total_days, current_date, action, reasoning) -> None
+        step_callback: 각 파이프라인 단계 시작 시 호출되는 콜백.
+            signature: (step_name: str) -> None
     """
     fetcher = DataFetcher(chart_dir=chart_dir)
     memory = MemoryStore(persist_dir=memory_dir)
@@ -136,6 +154,11 @@ def run_backtest(
     # 전체 기간 + 충분한 lookback 한 번에 수집
     lookback_days = (end - start).days + 90
     logger.info("Fetching price data for %s (lookback=%d days)…", symbol, lookback_days)
+    if step_callback:
+        try:
+            step_callback("ohlcv_fetch")
+        except Exception:
+            pass
     price_df = fetcher.get_price_data(symbol, lookback_days=lookback_days)
 
     # 백테스팅 대상 거래일 필터
@@ -166,6 +189,7 @@ def run_backtest(
                 hlr_module=hlr_module,
                 dm_module=dm_module,
                 trader_preference=trader_preference,
+                step_callback=step_callback,
             )
         except Exception:
             logger.exception("Error on %s, skipping day", ts.date())

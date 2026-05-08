@@ -10,6 +10,53 @@
   if (endInput && !endInput.value) endInput.value = ymd;
 })();
 
+// ── 파이프라인 노드 관리 ───────────────────────────────────────────────────────
+const PIPELINE_STEP_IDS = [
+  'ohlcv_fetch', 'news_fetch', 'market_intelligence',
+  'low_level_reflection', 'high_level_reflection',
+  'decision_making', 'trade_execution',
+];
+
+// 루프 내부 단계 (OHLCV 제외)
+const LOOP_STEP_IDS = PIPELINE_STEP_IDS.filter(id => id !== 'ohlcv_fetch');
+
+function activatePipelineStep(stepName) {
+  const idx = PIPELINE_STEP_IDS.indexOf(stepName);
+  if (idx === -1) return;
+  PIPELINE_STEP_IDS.forEach((id, i) => {
+    const el = document.getElementById('pnode-' + id);
+    if (!el) return;
+    el.classList.remove('active', 'done', 'completed');
+    if (i < idx)      el.classList.add('done');    // 이미 지난 단계: 켜짐
+    else if (i === idx) el.classList.add('active'); // 현재 단계: 깜빡임
+    // i > idx: inactive
+  });
+}
+
+function completePipelineDay() {
+  // 루프 단계만 ✓ 플래시 후 비활성화 (OHLCV는 done 유지)
+  LOOP_STEP_IDS.forEach(id => {
+    const el = document.getElementById('pnode-' + id);
+    if (!el) return;
+    el.classList.remove('active', 'done');
+    el.classList.add('completed');
+  });
+  setTimeout(() => {
+    LOOP_STEP_IDS.forEach(id => {
+      const el = document.getElementById('pnode-' + id);
+      if (el) el.classList.remove('completed'); // inactive로 복귀
+    });
+  }, 500);
+}
+
+function resetPipeline() {
+  PIPELINE_STEP_IDS.forEach(id => {
+    const el = document.getElementById('pnode-' + id);
+    if (!el) return;
+    el.classList.remove('active', 'done', 'completed');
+  });
+}
+
 // ── 상태 ──────────────────────────────────────────────────────────────────────
 let currentJobId = null;
 let eventSource = null;
@@ -84,7 +131,10 @@ function connectSSE(streamUrl, formData) {
     let data;
     try { data = JSON.parse(evt.data); } catch { return; }
 
-    if (data.type === 'progress') {
+    if (data.type === 'step') {
+      activatePipelineStep(data.step);
+    } else if (data.type === 'progress') {
+      completePipelineDay();
       handleProgress(data);
     } else if (data.type === 'done') {
       eventSource.close();
@@ -281,6 +331,7 @@ function showProgressPanel() {
   progressFill.style.width = '0%';
   progressPct.textContent = '0%';
   progressLabel.textContent = '준비 중…';
+  resetPipeline();
 }
 
 function showResultsPanel() {

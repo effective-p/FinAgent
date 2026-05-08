@@ -84,6 +84,95 @@
       <div class="card">
         <div class="card-title">백테스트 진행 중…</div>
 
+        <!-- ── 파이프라인 Flow ── -->
+        <div class="pipeline-scroll-wrap">
+        <div class="pipeline-flow" id="pipeline-flow">
+
+          <!-- OHLCV (루프 외부, 최초 1회) -->
+          <div class="pipeline-node type-api" id="pnode-ohlcv_fetch">
+            <div class="node-icon-wrap">
+              <div class="node-ring"></div>
+              <div class="node-icon">&#x1F4C8;</div>
+            </div>
+            <div class="node-label">OHLCV data fetch</div>
+            <div class="node-sub">API</div>
+          </div>
+
+          <div class="pipeline-arrow">&#x2192;</div>
+
+          <!-- Daily Loop 래퍼 — 직접 flex 컨테이너 -->
+          <div class="pipeline-loop-wrap">
+            <div class="loop-badge">Daily Loop</div>
+
+            <div class="pipeline-node type-api" id="pnode-news_fetch">
+              <div class="node-icon-wrap">
+                <div class="node-ring"></div>
+                <div class="node-icon">&#x1F4F0;</div>
+              </div>
+              <div class="node-label">Data fetch</div>
+              <div class="node-sub">API</div>
+            </div>
+
+            <div class="pipeline-arrow">&#x2192;</div>
+
+            <div class="pipeline-node type-ai" id="pnode-market_intelligence">
+              <div class="node-icon-wrap">
+                <div class="node-ring"></div>
+                <div class="node-icon">&#x1F9E0;</div>
+              </div>
+              <div class="node-label">Market Intelligence</div>
+              <div class="node-sub">Claude</div>
+            </div>
+
+            <div class="pipeline-arrow">&#x2192;</div>
+
+            <div class="pipeline-node type-ai" id="pnode-low_level_reflection">
+              <div class="node-icon-wrap">
+                <div class="node-ring"></div>
+                <div class="node-icon">&#x1F916;</div>
+              </div>
+              <div class="node-label">LLR</div>
+              <div class="node-sub">Claude</div>
+            </div>
+
+            <div class="pipeline-arrow">&#x2192;</div>
+
+            <div class="pipeline-node type-ai" id="pnode-high_level_reflection">
+              <div class="node-icon-wrap">
+                <div class="node-ring"></div>
+                <div class="node-icon">&#x1F916;</div>
+              </div>
+              <div class="node-label">HLR</div>
+              <div class="node-sub">Claude</div>
+            </div>
+
+            <div class="pipeline-arrow">&#x2192;</div>
+
+            <div class="pipeline-node type-ai" id="pnode-decision_making">
+              <div class="node-icon-wrap">
+                <div class="node-ring"></div>
+                <div class="node-icon">&#x26A1;</div>
+              </div>
+              <div class="node-label">Tool-Augmented Decision</div>
+              <div class="node-sub">Tool · Claude</div>
+            </div>
+
+            <div class="pipeline-arrow">&#x2192;</div>
+
+            <div class="pipeline-node type-db" id="pnode-trade_execution">
+              <div class="node-icon-wrap">
+                <div class="node-ring"></div>
+                <div class="node-icon">&#x1F6E2;</div>
+              </div>
+              <div class="node-label">Trading</div>
+              <div class="node-sub">Portfolio DB</div>
+            </div>
+
+          </div><!-- /.pipeline-loop-wrap -->
+
+        </div><!-- /.pipeline-flow -->
+        </div><!-- /.pipeline-scroll-wrap -->
+
         <div class="progress-header">
           <span class="progress-label" id="progress-label">준비 중…</span>
           <span class="progress-pct" id="progress-pct">0%</span>

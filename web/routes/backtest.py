@@ -21,6 +21,17 @@ def _get_run_backtest():
 router = APIRouter()
 
 
+def _make_step_callback(job: BacktestJob, loop: asyncio.AbstractEventLoop):
+    """동기 step_callback 생성 — 파이프라인 각 단계 시작 시 SSE로 push (재연결 리플레이 제외)."""
+
+    def callback(step: str):
+        event = {"type": "step", "step": step}
+        # 일시적 시각 정보이므로 job.events에 누적하지 않음 (재연결 시 리플레이 불필요)
+        loop.call_soon_threadsafe(job.queue.put_nowait, event)
+
+    return callback
+
+
 def _make_progress_callback(job: BacktestJob, loop: asyncio.AbstractEventLoop):
     """동기 progress_callback 생성 — 스레드에서 안전하게 asyncio queue에 push."""
 
@@ -55,6 +66,7 @@ async def start_backtest(req: BacktestRequest):
 
     loop = asyncio.get_event_loop()
     progress_cb = _make_progress_callback(job, loop)
+    step_cb = _make_step_callback(job, loop)
 
     async def run_in_thread():
         job.status = "running"
@@ -73,6 +85,7 @@ async def start_backtest(req: BacktestRequest):
                     memory_dir=memory_dir,
                     chart_dir=chart_dir,
                     progress_callback=progress_cb,
+                    step_callback=step_cb,
                 ),
             )
             job.result = result
