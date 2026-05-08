@@ -1,0 +1,120 @@
+
+<style>
+  .bt-wrap { padding: 1rem 0; font-size: 13px; }
+  .bt-wrap table { width: 100%; border-collapse: collapse; }
+  .bt-wrap th { font-size: 11px; font-weight: 500; color: var(--color-text-secondary); text-align: center; padding: 6px 8px; border-bottom: 0.5px solid var(--color-border-primary); white-space: nowrap; }
+  .bt-wrap th.row-header { text-align: left; }
+  .bt-wrap td { text-align: center; padding: 8px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); color: var(--color-text-primary); vertical-align: middle; }
+  .bt-wrap td.metric { text-align: left; font-weight: 500; color: var(--color-text-primary); white-space: nowrap; padding-right: 16px; }
+  .bt-wrap tr:last-child td { border-bottom: none; }
+  .bt-wrap tr:hover td { background: var(--color-background-secondary); }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .pos { background: #EAF3DE; color: #27500A; }
+  .neg { background: #FCEBEB; color: #791F1F; }
+  .ticker-sub { font-size: 10px; color: var(--color-text-secondary); font-weight: 400; display: block; }
+</style>
+<div class="bt-wrap">
+  <h2 class="sr-only">백테스팅 결과 피봇 테이블 (지표별 × 종목별, 2026-04-02 ~ 2026-05-07)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="row-header">지표</th>
+        <th>삼성전자<span class="ticker-sub">005930</span></th>
+        <th>에이비엘바이오<span class="ticker-sub">298380</span></th>
+        <th>리노공업<span class="ticker-sub">058470</span></th>
+        <th>현대차<span class="ticker-sub">005380</span></th>
+        <th>두산에너빌리티<span class="ticker-sub">034020</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="metric">최종 자산 (원)</td>
+        <td>12,956,909</td>
+        <td>9,521,943</td>
+        <td>9,997,831</td>
+        <td>9,743,327</td>
+        <td>12,766,936</td>
+      </tr>
+      <tr>
+        <td class="metric">총 수익률</td>
+        <td><span class="badge pos">+29.57%</span></td>
+        <td><span class="badge neg">-4.78%</span></td>
+        <td><span class="badge neg">-0.02%</span></td>
+        <td><span class="badge neg">-2.57%</span></td>
+        <td><span class="badge pos">+27.67%</span></td>
+      </tr>
+      <tr>
+        <td class="metric">연간 환산 수익률</td>
+        <td><span class="badge pos">+1417.98%</span></td>
+        <td><span class="badge neg">-40.21%</span></td>
+        <td><span class="badge neg">-0.23%</span></td>
+        <td><span class="badge neg">-23.89%</span></td>
+        <td><span class="badge pos">+1199.90%</span></td>
+      </tr>
+      <tr>
+        <td class="metric">Sharpe Ratio</td>
+        <td>7.372</td>
+        <td>-6.358</td>
+        <td>-0.133</td>
+        <td>-1.637</td>
+        <td>8.585</td>
+      </tr>
+      <tr>
+        <td class="metric">최대 낙폭 (MDD)</td>
+        <td>-1.22%</td>
+        <td>-5.71%</td>
+        <td>-3.13%</td>
+        <td>-4.04%</td>
+        <td>-1.60%</td>
+      </tr>
+      <tr>
+        <td class="metric">연간 변동성</td>
+        <td>39.26%</td>
+        <td>8.84%</td>
+        <td>15.48%</td>
+        <td>18.23%</td>
+        <td>31.54%</td>
+      </tr>
+      <tr>
+        <td class="metric">Buy &amp; Hold 수익률</td>
+        <td><span class="badge pos">+52.19%</span></td>
+        <td><span class="badge neg">-20.90%</span></td>
+        <td><span class="badge pos">+14.53%</span></td>
+        <td><span class="badge pos">+22.88%</span></td>
+        <td><span class="badge pos">+45.73%</span></td>
+      </tr>
+      <tr>
+        <td class="metric">초과 수익률</td>
+        <td><span class="badge neg">-22.62%</span></td>
+        <td><span class="badge pos">+16.12%</span></td>
+        <td><span class="badge neg">-14.55%</span></td>
+        <td><span class="badge neg">-25.45%</span></td>
+        <td><span class="badge neg">-18.06%</span></td>
+      </tr>
+      <tr>
+        <td class="metric">매수 횟수</td>
+        <td>8</td>
+        <td>2</td>
+        <td>2</td>
+        <td>5</td>
+        <td>6</td>
+      </tr>
+      <tr>
+        <td class="metric">매도 횟수</td>
+        <td>5</td>
+        <td>2</td>
+        <td>1</td>
+        <td>5</td>
+        <td>3</td>
+      </tr>
+      <tr>
+        <td class="metric">홀드 횟수</td>
+        <td>11</td>
+        <td>20</td>
+        <td>21</td>
+        <td>14</td>
+        <td>15</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
