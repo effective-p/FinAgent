@@ -12,9 +12,10 @@ augmented tools are implemented with the decision-making module.](assets/archite
 [![Forks](https://img.shields.io/github/forks/effective-p/FinAgent?style=flat)](https://github.com/effective-p/FinAgent/network/members)
 [![Contributors](https://img.shields.io/github/contributors/effective-p/FinAgent?style=flat)](https://github.com/effective-p/FinAgent/graphs/contributors)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Shell](https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white)
 ![Python](https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white)
-![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
+![Conda](https://img.shields.io/badge/-Conda-3776AB?logo=anaconda&logoColor=white)
+![Markdown](https://img.shields.io/badge/-FastAPI-3776AB?logo=fastapi&logoColor=white)
+![Markdown](https://img.shields.io/badge/-Markdown-303030?logo=markdown&logoColor=white)
 
 ---
 
