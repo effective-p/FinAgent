@@ -101,7 +101,7 @@ python finagent/main.py \
 
 ```
 ====================================================
-  Backtesting Result: 005930  (2024-01-02 ~ 2024-03-29)
+  Backtesting Result: 005930 [삼성전자]  (2024-01-02 ~ 2024-03-29)
 ====================================================
   Final Portfolio Value:      11,234,567 KRW
   Total Return:                   +12.35%
@@ -148,7 +148,7 @@ Access `http://localhost:8000` in your browser.
 ![Work flow](assets/workflow.png)
 
 ##### Result Dashboard
-![Result dashboard](assets/result-dashboard.png)
+![Result dashboard](assets/backtesting-5.png)
 
 #### How it Works
 
