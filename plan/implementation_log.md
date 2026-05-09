@@ -1,17 +1,17 @@
-# FinAgent 구현 로그
+# FinAgent Implementation Log
 
-논문 [arxiv 2402.18485](https://arxiv.org/abs/2402.18485) 기반 멀티모달 트레이딩 에이전트의 단계별 구현 기록.  
-각 단계마다 **의도(왜 이렇게 설계했는가)** 와 **실제 구현(무엇을 어떻게 만들었는가)** 을 함께 정리한다.
+Step-by-step implementation record of a multimodal trading agent based on the paper [arxiv 2402.18485](https://arxiv.org/abs/2402.18485).  
+For each step, both **intent (why this design)** and **actual implementation (what was built and how)** are documented together.
 
 ---
 
-## 환경 설정
+## Environment Setup
 
-### 의도
-- 재현 가능한 환경을 만들고, 나중에도 동일하게 복원할 수 있어야 한다.
-- `pandas_ta` 최신 버전이 Python 3.12+를 요구하므로 Python 3.12로 확정.
+### Intent
+- Create a reproducible environment that can be restored identically later.
+- Python 3.12 was chosen because the latest `pandas_ta` version requires Python 3.12+.
 
-### 실제 구현
+### Actual Implementation
 ```bash
 conda create -n finagent python=3.12 -y
 conda activate finagent
@@ -19,33 +19,33 @@ pip install anthropic pykrx pandas_ta mplfinance chromadb \
             sentence-transformers pydantic feedparser pytest
 ```
 
-생성 파일:
-- `environment.yml` — conda 환경 재현용 (채널, Python 버전, pip 패키지 목록)
-- `requirements.txt` — pip-only 설치용 (직접 의존성만 명시, transitive 제외)
-- `pytest.ini` — `integration` 마크 등록 (단위/통합 테스트 분리 실행)
+Files created:
+- `environment.yml` — For conda environment reproduction (channels, Python version, pip package list)
+- `requirements.txt` — For pip-only installation (direct dependencies only, no transitive)
+- `pytest.ini` — Register `integration` mark (separate unit/integration test execution)
 
-### 결정 사항
-| 항목 | 선택 | 이유 |
+### Decisions
+| Item | Choice | Reason |
 |------|------|------|
-| Python 버전 | 3.12 | pandas_ta 0.4.x 요구사항 |
-| 주가 데이터 | pykrx | yfinance 대신 KRX 한국 주식 전용, 무료 |
-| 뉴스 데이터 | 구글 RSS + feedparser | API 키 불필요, 한국 종목 뉴스 품질 우수 |
-| LLM | claude-sonnet-4-6 | 프로젝트 기본 모델 |
+| Python version | 3.12 | pandas_ta 0.4.x requirement |
+| Stock price data | pykrx | Dedicated to KRX Korean stocks instead of yfinance, free |
+| News data | Google RSS + feedparser | No API key required, good quality Korean stock news |
+| LLM | claude-sonnet-4-6 | Default model for the project |
 
 ---
 
-## Step 1 — 데이터 레이어 (LLM 비의존)
+## Step 1 — Data Layer (LLM-independent)
 
-**목표**: 가격 수집, 뉴스 수집, 차트 생성, 포트폴리오 관리, 기술적 지표를 구현한다.  
-LLM 없이 동작하는 기반 레이어이므로 이 단계만 완료해도 독립적으로 테스트 가능해야 한다.
+**Goal**: Implement price collection, news collection, chart generation, portfolio management, and technical indicators.  
+Since this is a foundation layer that works without LLM, it should be independently testable after this step alone.
 
-### 1-1. 공통 스키마 (`finagent/utils/schemas.py`)
+### 1-1. Common Schemas (`finagent/utils/schemas.py`)
 
-#### 의도
-모듈 간 데이터를 안전하게 주고받으려면 명시적인 타입 계약이 필요하다.  
-Pydantic을 써서 런타임 유효성 검사와 IDE 자동완성을 동시에 확보한다.
+#### Intent
+Explicit type contracts are needed to safely pass data between modules.  
+Using Pydantic to achieve both runtime validation and IDE autocomplete simultaneously.
 
-#### 구현
+#### Implementation
 ```python
 class NewsItem(BaseModel):
     title: str; summary: str; published: datetime; url: str
@@ -54,7 +54,7 @@ class TechnicalSignals(BaseModel):
     macd_signal: str       # "BUY" | "SELL" | "HOLD"
     kdj_rsi_signal: str
     zmr_signal: str
-    signal_text: str       # LLM 프롬프트 주입용 텍스트
+    signal_text: str       # Text for LLM prompt injection
 
 class TradeAction(BaseModel):
     action: str; quantity: float; price: float
@@ -68,21 +68,21 @@ class PortfolioState(BaseModel):
 
 ### 1-2. DataFetcher (`finagent/data/fetcher.py`)
 
-#### 의도
-- **주가**: pykrx로 KRX 종목 OHLCV를 수집한다. 컬럼명을 `시가→Open` 등 영문으로 rename하여 mplfinance/pandas_ta와 호환한다.
-- **뉴스**: 구글 뉴스 RSS를 feedparser로 파싱한다. 종목명(한글)을 검색어로 쓰며, `target_date ±7일` 필터를 클라이언트에서 적용한다.
-- **차트 2종**: Kline(캔들)은 LLR에, Trading(라인+마커)은 HLR에 사용한다.
+#### Intent
+- **Stock prices**: Collect KRX stock OHLCV via pykrx. Rename columns to English (`시가→Open`, etc.) for compatibility with mplfinance/pandas_ta.
+- **News**: Parse Google News RSS via feedparser. Uses stock name (Korean) as search term, applies `target_date ±7 day` filter client-side.
+- **2 chart types**: Kline (candlestick) for LLR, Trading (line+markers) for HLR.
 
-#### 구현
+#### Implementation
 ```python
 class DataFetcher:
     def get_price_data(self, symbol: str, lookback_days: int = 60) -> pd.DataFrame:
         # pykrx.stock.get_market_ohlcv_by_date(fromdate, todate, symbol)
-        # 컬럼 rename: 시가→Open, 고가→High, 저가→Low, 종가→Close, 거래량→Volume
+        # Column rename: 시가→Open, 고가→High, 저가→Low, 종가→Close, 거래량→Volume
 
     def get_news(self, symbol, stock_name, target_date, max_items=10) -> List[NewsItem]:
-        # RSS: https://news.google.com/rss/search?hl=ko&gl=KR&ie=UTF-8&q={종목명+주가}
-        # ±7일 필터 (클라이언트 사이드)
+        # RSS: https://news.google.com/rss/search?hl=ko&gl=KR&ie=UTF-8&q={stock_name+stock_price}
+        # ±7 day filter (client-side)
 
     def plot_kline_chart(self, df, target_date, symbol, window=30) -> str:
         # mplfinance candle chart → charts/kline_{symbol}_{date}.png
@@ -91,96 +91,96 @@ class DataFetcher:
         # line chart + BUY(▲ green) / SELL(▽ red) scatter markers
 ```
 
-#### 설계 결정
-- `get_price_data`는 `today - lookback_days` ~ `today` 구간을 수집한다.  
-  백테스팅 시 main.py에서 전체 기간을 한 번에 수집 후 `df.loc[:target_date]`로 슬라이싱하여 look-ahead bias를 방지한다.
-- chart 파일 경로: `charts/kline_{symbol}_{date}.png` 형식으로 자동 네이밍.
+#### Design Decisions
+- `get_price_data` collects the range from `today - lookback_days` to `today`.  
+  In backtesting, main.py collects the full period at once and slices with `df.loc[:target_date]` to prevent look-ahead bias.
+- Chart file path: Auto-named in the format `charts/kline_{symbol}_{date}.png`.
 
 ---
 
 ### 1-3. TechnicalIndicators (`finagent/tools/technical_indicators.py`)
 
-#### 의도
-논문의 expert guidance를 단순화하여, 기술적 지표 계산 결과를 LLM이 이해할 수 있는 텍스트 시그널로 변환한다.  
-`pandas_ta`가 내부적으로 소문자 컬럼을 기대하므로 `df.columns = [c.lower() for c in df.columns]` 전처리가 필요하다.
+#### Intent
+Simplifying the paper's expert guidance, converts technical indicator calculation results into text signals that the LLM can understand.  
+`pandas_ta` internally expects lowercase columns, so `df.columns = [c.lower() for c in df.columns]` preprocessing is required.
 
-#### 구현된 지표 3종
+#### 3 Implemented Indicators
 
-| 지표 | 파라미터 | BUY 조건 | SELL 조건 |
+| Indicator | Parameters | BUY Condition | SELL Condition |
 |------|----------|----------|-----------|
-| **MACD** | fast=12, slow=26, signal=9 | Golden cross (이전봉 MACD < Signal, 현재봉 MACD ≥ Signal) | Dead cross |
+| **MACD** | fast=12, slow=26, signal=9 | Golden cross (previous bar MACD < Signal, current bar MACD ≥ Signal) | Dead cross |
 | **KDJ + RSI** | K=9, D=3, smooth_k=3 / RSI(14) | K < 20 AND RSI < 30 (oversold) | K > 80 AND RSI > 70 (overbought) |
-| **ZMR** | window=20 | z-score < −1.5 (MA20 대비 저평가) | z-score > 1.5 (고평가) |
+| **ZMR** | window=20 | z-score < −1.5 (undervalued vs MA20) | z-score > 1.5 (overvalued) |
 
 ```python
 def get_technical_signals(df: pd.DataFrame) -> TechnicalSignals:
-    # 반환: TechnicalSignals.signal_text — 3개 시그널을 \n 구분 텍스트로 합침
-    # 예: "MACD: BUY signal (golden cross, MACD=0.1234)\n
-    #      KDJ+RSI: HOLD (K=55.2, J=58.1, RSI=52.3)\n
-    #      ZMR: SELL signal (z-score=1.72, price overvalued vs MA20)"
+    # Returns: TechnicalSignals.signal_text — 3 signals combined with \n separator
+    # Example: "MACD: BUY signal (golden cross, MACD=0.1234)\n
+    #           KDJ+RSI: HOLD (K=55.2, J=58.1, RSI=52.3)\n
+    #           ZMR: SELL signal (z-score=1.72, price overvalued vs MA20)"
 ```
 
 ---
 
 ### 1-4. Portfolio (`finagent/portfolio/portfolio.py`)
 
-#### 의도
-거래 내역과 포지션을 영속적으로 저장해야 한다. SQLite를 선택한 이유는 파일 하나로 관리되고 외부 서버 불필요하기 때문이다.  
-같은 `db_path + symbol`로 재초기화해도 기존 잔고가 유지되어야 한다 (`INSERT OR IGNORE`).
+#### Intent
+Trade history and positions must be stored persistently. SQLite was chosen because it is managed as a single file and requires no external server.  
+Reinitializing with the same `db_path + symbol` should retain existing balances (`INSERT OR IGNORE`).
 
-#### 구현
+#### Implementation
 ```
-테이블:
+Tables:
   state  (symbol PK, position REAL, cash REAL)
   trades (id PK, date, symbol, action, quantity, price, reasoning)
 ```
 
 ```python
-BUY_RATIO = 0.5  # 매수 시 현금의 50% 사용
+BUY_RATIO = 0.5  # Use 50% of cash for each buy
 
 class Portfolio:
     def execute(action, price, target_date, reasoning):
-        # BUY  → quantity = cash * 0.5 / price, cash 차감
-        # SELL → 전량 매도, position = 0
-        # HOLD → 상태 변화 없이 거래 기록만 남김
+        # BUY  → quantity = cash * 0.5 / price, deduct from cash
+        # SELL → sell entire position, position = 0
+        # HOLD → no state change, only record trade
 
-    def get_all_trades() -> List[TradeAction]      # 날짜 오름차순 전체 내역
-    def recent_actions(n=14) -> List[TradeAction]  # 최근 N건 (역순 조회 후 정방향 반환)
+    def get_all_trades() -> List[TradeAction]      # Full history in ascending date order
+    def recent_actions(n=14) -> List[TradeAction]  # Recent N records (query in reverse, return forward)
     def get_state(current_price) -> PortfolioState
     def get_returns(current_price, initial_cash) -> dict
 ```
 
-#### 설계 결정
-- 컨텍스트 매니저 `_conn()`이 자동 commit/rollback을 처리한다.
-- `BUY_RATIO = 0.5`는 모듈 상수로 분리하여 전략 변경 시 한 곳만 수정하면 된다.
+#### Design Decisions
+- The context manager `_conn()` handles automatic commit/rollback.
+- `BUY_RATIO = 0.5` is separated as a module constant so only one place needs to change when modifying strategy.
 
 ---
 
-### Step 1 테스트 결과
+### Step 1 Test Results
 
 ```
-tests/test_step1.py — 21개 테스트 (단위 18 + 통합 3)
+tests/test_step1.py — 21 tests (18 unit + 3 integration)
 ```
 
-| 테스트 클래스 | 케이스 수 | 주요 검증 항목 |
+| Test Class | Case Count | Key Validations |
 |--------------|-----------|---------------|
-| `TestTechnicalSignals` | 6 | BUY/SELL/HOLD 시그널 정확도, ZMR 경계값 |
-| `TestPortfolio` | 12 | BUY/SELL/HOLD 실행, 잔고 계산, DB 재사용 |
-| `TestDataFetcherIntegration` | 3 | 실제 pykrx 수집, kline/trading 차트 생성 |
+| `TestTechnicalSignals` | 6 | BUY/SELL/HOLD signal accuracy, ZMR boundary values |
+| `TestPortfolio` | 12 | BUY/SELL/HOLD execution, balance calculation, DB reuse |
+| `TestDataFetcherIntegration` | 3 | Actual pykrx fetch, kline/trading chart generation |
 
 ---
 
 ## Step 2 — MemoryStore (ChromaDB)
 
-**목표**: 세 모듈(MI·LLR·HLR)이 각자의 과거 기억을 저장하고 의미 기반으로 검색할 수 있어야 한다.  
-특히 Diversified Retrieval — 단기·중기·장기 3가지 관점으로 독립 검색해 시간적으로 다양한 과거 기억을 수집하는 것이 핵심이다.
+**Goal**: The three modules (MI·LLR·HLR) must be able to store their own past memories and search them semantically.  
+In particular, Diversified Retrieval — collecting temporally diverse past memories through independent searches from short/medium/long-term perspectives — is the core.
 
-### 의도
-- ChromaDB를 선택한 이유: 로컬 실행, 메타데이터 필터링, Python API 단순함.
-- 임베딩: `sentence-transformers all-MiniLM-L6-v2` — 무료, 로컬 실행, 한국어 포함 다국어 지원.
-- 3개 컬렉션 독립: 모듈 간 메모리 오염을 방지하고 각 컬렉션의 의미 공간을 순수하게 유지한다.
+### Intent
+- Why ChromaDB: local execution, metadata filtering, simple Python API.
+- Embeddings: `sentence-transformers all-MiniLM-L6-v2` — free, local execution, multilingual support including Korean.
+- 3 independent collections: Prevents memory contamination between modules and keeps the semantic space of each collection pure.
 
-### 구현 (`finagent/memory/store.py`)
+### Implementation (`finagent/memory/store.py`)
 
 ```python
 COLLECTIONS = ("market_intelligence", "low_level_reflection", "high_level_reflection")
@@ -189,143 +189,143 @@ class MemoryStore:
     def __init__(self, persist_dir="memory_db", embedding_model="all-MiniLM-L6-v2"):
         self._client = chromadb.PersistentClient(path=persist_dir)
         self._ef = SentenceTransformerEmbeddingFunction(model_name=embedding_model)
-        # 3개 컬렉션을 get_or_create로 초기화
+        # Initialize 3 collections with get_or_create
 
     def add(collection, text, metadata):
-        # upsert — (symbol, date, text_hash)로 결정적 ID 생성
-        # 같은 (symbol, date) 조합 재실행 시 덮어쓰기
+        # upsert — generate deterministic ID with (symbol, date, text_hash)
+        # Overwrite on re-run with same (symbol, date) combination
 
     def retrieve(collection, query_text, top_k=3) -> List[str]:
-        # 의미 유사도 검색, 컬렉션이 비어있으면 [] 반환
+        # Semantic similarity search, returns [] if collection is empty
 
     def diversified_retrieve(collection, queries: List[str], top_k_each=2) -> List[str]:
-        # 여러 쿼리로 독립 검색 후 중복 제거
-        # 최대 len(queries) * top_k_each 개 반환
+        # Independent search with multiple queries, then deduplicate
+        # Returns up to len(queries) * top_k_each results
 ```
 
-#### ID 생성 전략
+#### ID Generation Strategy
 ```python
 def _make_id(metadata, text) -> str:
     text_hash = hashlib.sha1(text.encode()).hexdigest()[:8]
     return f"{symbol}_{date}_{text_hash}"
 ```
-같은 날짜에 같은 내용이 두 번 저장되면 upsert로 1개만 유지.
+If the same content is stored twice on the same date, upsert keeps only 1.
 
-### Diversified Retrieval 흐름
+### Diversified Retrieval Flow
 ```
 short_term_query  → retrieve(top_k=2) → [doc_A, doc_B]
-medium_term_query → retrieve(top_k=2) → [doc_B, doc_C]  ← doc_B 중복
+medium_term_query → retrieve(top_k=2) → [doc_B, doc_C]  ← doc_B duplicate
 long_term_query   → retrieve(top_k=2) → [doc_D, doc_E]
-                                    ↓ 중복 제거
-                             [doc_A, doc_B, doc_C, doc_D, doc_E]  최대 6개
+                                    ↓ deduplicate
+                             [doc_A, doc_B, doc_C, doc_D, doc_E]  up to 6
 ```
 
-### Step 2 테스트 결과
+### Step 2 Test Results
 
 ```
-tests/test_step2.py — 10개 테스트
+tests/test_step2.py — 10 tests
 ```
 
-주요 검증: add/retrieve 정확도, upsert 중복 처리, 컬렉션 독립성, 의미 유사도 순위.
+Key validations: add/retrieve accuracy, upsert duplicate handling, collection independence, semantic similarity ranking.
 
 ---
 
 ## Step 3 — MarketIntelligenceModule
 
-**목표**: 당일 뉴스와 가격 데이터를 Claude로 분석하고, 과거 유사 상황을 메모리에서 검색하여 종합 시장 판단을 생성한다.
+**Goal**: Analyze the day's news and price data with Claude, search past similar situations from memory, and generate a comprehensive market judgment.
 
-### 의도
-- Claude에게 분석을 맡기되, `summary`(trading용)와 3개 `query`(retrieval용)를 XML 포맷으로 분리 출력하게 강제한다.
-- 이 분리가 Diversified Retrieval의 핵심 — 같은 분석에서 단/중/장기 관점의 쿼리를 동시에 얻는다.
+### Intent
+- Delegate analysis to Claude, but enforce separate XML format output for `summary` (for trading) and 3 `queries` (for retrieval).
+- This separation is key to Diversified Retrieval — simultaneously obtaining short/medium/long-term perspective queries from the same analysis.
 
-### XML 파서 (`finagent/utils/xml_parser.py`)
+### XML Parser (`finagent/utils/xml_parser.py`)
 
-#### 의도
-Claude의 응답이 항상 완벽한 XML이 아닐 수 있다. 두 가지 포맷을 모두 지원하고, 실패 시 빈 문자열을 반환해 상위 코드에서 fallback을 처리한다.
+#### Intent
+Claude's responses may not always be perfect XML. Support two formats and return empty string on failure, letting higher-level code handle fallback.
 
 ```python
 def parse_field(xml_text, tag) -> str:
-    # 1순위: <tag>value</tag>
-    # 2순위: <string name="tag">value</string>
-    # 미발견 시: ""
+    # Priority 1: <tag>value</tag>
+    # Priority 2: <string name="tag">value</string>
+    # Not found: ""
 
 def parse_output(xml_text, *tags) -> dict[str, str]:
-    # 여러 태그 한 번에 추출
+    # Extract multiple tags at once
 ```
 
 ### MarketIntelligenceModule (`finagent/modules/market_intelligence.py`)
 
-#### 구현 흐름
+#### Implementation Flow
 
 ```
 run(symbol, target_date, price_df, news_list)
   │
   ├─ 1. _analyze_latest()
-  │     Claude API 호출 (텍스트)
-  │     입력: 최근 10거래일 가격표 + 뉴스 목록
-  │     출력: summary, short/medium/long_term_query
+  │     Claude API call (text)
+  │     Input: recent 10 trading day price table + news list
+  │     Output: summary, short/medium/long_term_query
   │
   ├─ 2. diversified_retrieve("market_intelligence", [short_q, medium_q, long_q], top_k_each=2)
-  │     → 과거 MI 최대 6개
+  │     → up to 6 past MI records
   │
   ├─ 3. _format_past_docs(past_docs)
-  │     → "[과거 Market Intelligence 요약]\n1. ...\n2. ..."
+  │     → "[Past Market Intelligence Summary]\n1. ...\n2. ..."
   │
   └─ 4. memory.add("market_intelligence", summary, {symbol, date, queries})
         return MIResult(latest_summary, past_summary, short/medium/long_term_query)
 ```
 
-#### 프롬프트 설계
+#### Prompt Design
 ```
-[종목코드] / [분석 기준일] / [최근 뉴스] / [최근 가격 데이터]
+[Stock code] / [Analysis reference date] / [Recent news] / [Recent price data]
 
-→ XML 출력:
+→ XML output:
 <output>
-  <summary>트레이딩용 종합 분석 (3-5문장)</summary>
-  <short_term_query>단기(1-5일) 검색 쿼리</short_term_query>
-  <medium_term_query>중기(1-4주) 검색 쿼리</medium_term_query>
-  <long_term_query>장기(1-3개월) 검색 쿼리</long_term_query>
+  <summary>Comprehensive analysis for trading (3-5 sentences)</summary>
+  <short_term_query>Short-term (1-5 days) search query</short_term_query>
+  <medium_term_query>Medium-term (1-4 weeks) search query</medium_term_query>
+  <long_term_query>Long-term (1-3 months) search query</long_term_query>
 </output>
 ```
 
-#### 결과 스키마
+#### Result Schema
 ```python
 class MIResult(BaseModel):
-    latest_summary: str      # 최신 분석 요약 (trading용)
-    past_summary: str        # 과거 MI 포맷팅 결과
-    short_term_query: str    # 이후 LLR/HLR 검색에 재사용
+    latest_summary: str      # Latest analysis summary (for trading)
+    past_summary: str        # Past MI formatting result
+    short_term_query: str    # Reused for subsequent LLR/HLR search
     medium_term_query: str
     long_term_query: str
 ```
 
-### Step 3 테스트 결과
+### Step 3 Test Results
 
 ```
-tests/test_step3.py — 21개 테스트 (단위 20 + 통합 1)
+tests/test_step3.py — 21 tests (20 unit + 1 integration)
 ```
 
-Claude API는 `unittest.mock`으로 대체. 사전 정의된 XML 응답을 주입해 파싱·저장·조회 로직만 검증.
+Claude API replaced with `unittest.mock`. Only parsing·storing·retrieval logic validated by injecting pre-defined XML responses.
 
 ---
 
 ## Step 4 — LowLevelReflection (Vision)
 
-**목표**: Kline 차트 이미지를 Claude Vision으로 분석하여 단/중/장기 가격 변동의 원인을 추론한다.
+**Goal**: Analyze Kline chart images with Claude Vision to infer the causes of short/medium/long-term price movements.
 
-### 의도
-논문의 LLR은 "가격 변동과 Market Intelligence 간의 연결 관계"를 분석한다.  
-캔들 패턴, 거래량, 지지/저항선은 텍스트보다 이미지로 전달했을 때 모델이 더 잘 분석할 수 있다고 판단하여 Vision API를 사용한다.
+### Intent
+The paper's LLR analyzes "the connection between price movements and Market Intelligence."  
+Candlestick patterns, trading volume, and support/resistance levels were judged to be better analyzed by the model as images rather than text, hence Vision API is used.
 
-### 구현 (`finagent/modules/low_level_reflection.py`)
+### Implementation (`finagent/modules/low_level_reflection.py`)
 
-#### 가격 변동률 계산
+#### Price Change Calculation
 ```python
 def _calc_price_changes(df, target_date) -> dict:
-    # target_date 기준 1d / 5d / 10d / 20d 변동률(%)
-    # 데이터 부족 시 None 반환 (lookback 초반 안전 처리)
+    # 1d / 5d / 10d / 20d change rates (%) relative to target_date
+    # Return None if insufficient data (safe handling at start of lookback)
 ```
 
-#### Claude Vision 호출
+#### Claude Vision Call
 ```python
 messages=[{
     "role": "user",
@@ -343,142 +343,142 @@ messages=[{
 }]
 ```
 
-#### 구현 흐름
+#### Implementation Flow
 ```
 run(symbol, target_date, price_df, kline_image_path, mi_result)
   │
-  ├─ 1. _calc_price_changes(price_df, target_date)  → 1d/5d/10d/20d 변동률
+  ├─ 1. _calc_price_changes(price_df, target_date)  → 1d/5d/10d/20d change rates
   ├─ 2. memory.retrieve("low_level_reflection", mi_result.short_term_query, top_k=3)
-  ├─ 3. Claude Vision 호출 (Kline 이미지 + 가격변동 + MI 요약 + 과거 LLR)
-  │     XML 출력: short/medium/long_term_reasoning, query
+  ├─ 3. Claude Vision call (Kline image + price changes + MI summary + past LLR)
+  │     XML output: short/medium/long_term_reasoning, query
   └─ 4. memory.add("low_level_reflection",
-                   "단기: ...\n중기: ...\n장기: ...",  ← 3개 reasoning 합산
+                   "short-term: ...\nmedium-term: ...\nlong-term: ...",  ← 3 reasonings combined
                    {symbol, date})
         return LLRResult
 ```
 
-#### 메모리 저장 전략
-세 reasoning을 하나의 문서로 합쳐 저장한다.  
-이유: HLR이 검색할 때 세 관점이 함께 있어야 맥락을 파악할 수 있기 때문.
+#### Memory Storage Strategy
+Store the three reasonings as a single combined document.  
+Reason: When HLR searches, all three perspectives need to be together to understand context.
 
-#### 결과 스키마
+#### Result Schema
 ```python
 class LLRResult(BaseModel):
-    short_term_reasoning: str   # 단기 원인 분석
-    medium_term_reasoning: str  # 중기 원인 분석
-    long_term_reasoning: str    # 장기 원인 분석
-    query: str                  # HLR retrieval용 쿼리
+    short_term_reasoning: str   # Short-term cause analysis
+    medium_term_reasoning: str  # Medium-term cause analysis
+    long_term_reasoning: str    # Long-term cause analysis
+    query: str                  # Query for HLR retrieval
 ```
 
-### Step 4 테스트 결과
+### Step 4 Test Results
 
 ```
-tests/test_step4.py — 16개 테스트 (단위 15 + 통합 1)
+tests/test_step4.py — 16 tests (15 unit + 1 integration)
 ```
 
-단위 테스트에서는 1×1 white PNG를 임시 파일로 생성하여 Vision 코드 경로를 실제로 통과시킨다.  
-Claude 응답은 mock으로 대체.
+Unit tests create a 1×1 white PNG as a temporary file to actually pass through the Vision code path.  
+Claude responses replaced with mock.
 
 ---
 
 ## Step 5 — HighLevelReflection (Vision)
 
-**목표**: 과거 거래 결정들을 Trading 차트와 함께 재평가하여 개선 방안을 도출한다.
+**Goal**: Re-evaluate past trading decisions along with the Trading chart to derive improvement plans.
 
-### 의도
-LLR이 "왜 가격이 이렇게 움직였나"를 분석한다면,  
-HLR은 "그 상황에서 내 결정이 옳았나"를 평가한다.  
-BUY▲/SELL▽ 마커가 포함된 Trading 차트를 보면 결정 시점과 이후 가격 흐름을 시각적으로 비교할 수 있다.
+### Intent
+If LLR analyzes "why the price moved this way,"  
+HLR evaluates "whether my decision in that situation was correct."  
+Viewing a Trading chart with BUY▲/SELL▽ markers allows visual comparison of decision timing and subsequent price movement.
 
-### LLR과의 차이점
+### Differences from LLR
 
-| 항목 | LLR | HLR |
+| Item | LLR | HLR |
 |------|-----|-----|
-| 차트 타입 | Kline (캔들) | Trading (라인 + 매매 마커) |
-| 분석 대상 | 가격 패턴 | 과거 거래 결정의 적절성 |
-| 추가 입력 | 가격변동률 | past_actions (최근 14건) |
-| 메모리 저장 내용 | 3개 reasoning 합산 | summary (1-2문장 핵심 요약) |
+| Chart type | Kline (candlestick) | Trading (line + trade markers) |
+| Analysis target | Price patterns | Appropriateness of past trading decisions |
+| Additional input | Price change rates | past_actions (recent 14 records) |
+| Memory storage content | 3 reasonings combined | summary (1-2 sentence key summary) |
 
-### 구현 (`finagent/modules/high_level_reflection.py`)
+### Implementation (`finagent/modules/high_level_reflection.py`)
 
-#### 구현 흐름
+#### Implementation Flow
 ```
 run(symbol, target_date, trading_chart_path, past_actions, mi_result, llr_result)
   │
   ├─ 1. memory.retrieve("high_level_reflection", llr_result.query, top_k=3)
-  ├─ 2. _format_actions(past_actions)  → 날짜/액션/가격/수량/판단 근거 표
-  ├─ 3. Claude Vision 호출
-  │     입력: Trading 차트 + 거래내역 + MI 요약 + LLR 단/중/장기 + 과거 HLR
-  │     XML 출력: reasoning, improvement, summary, query
+  ├─ 2. _format_actions(past_actions)  → date/action/price/quantity/reasoning table
+  ├─ 3. Claude Vision call
+  │     Input: Trading chart + trade history + MI summary + LLR short/medium/long-term + past HLR
+  │     XML output: reasoning, improvement, summary, query
   └─ 4. memory.add("high_level_reflection", result.summary, {symbol, date})
         return HLRResult
 ```
 
-#### 결과 스키마
+#### Result Schema
 ```python
 class HLRResult(BaseModel):
-    reasoning: str    # 과거 결정들의 종합 평가
-    improvement: str  # 구체적 개선 방안
-    summary: str      # 메모리 저장 핵심 요약 (1-2문장)
-    query: str        # DecisionMaking retrieval용 쿼리
+    reasoning: str    # Comprehensive evaluation of past decisions
+    improvement: str  # Specific improvement plans
+    summary: str      # Key summary for memory storage (1-2 sentences)
+    query: str        # Query for DecisionMaking retrieval
 ```
 
-### Step 5 테스트 결과
+### Step 5 Test Results
 
 ```
-tests/test_step5.py — 15개 테스트 (단위 14 + 통합 1)
+tests/test_step5.py — 15 tests (14 unit + 1 integration)
 ```
 
 ---
 
-## Step 6 — DecisionMaking + 전체 파이프라인
+## Step 6 — DecisionMaking + Full Pipeline
 
-**목표**: MI·LLR·HLR 결과와 기술적 지표를 종합하여 최종 BUY/SELL/HOLD를 결정하고, 하루치 파이프라인을 `run_day()`로 통합한다.
+**Goal**: Synthesize MI·LLR·HLR results with technical indicators to make the final BUY/SELL/HOLD decision, and integrate the one-day pipeline into `run_day()`.
 
 ### DecisionMakingModule (`finagent/modules/decision_making.py`)
 
-#### 의도
-모든 분석을 하나의 프롬프트에 담아 Claude에게 최종 판단을 맡긴다.  
-기술적 지표는 모듈 내부에서 `get_technical_signals(price_df)`로 계산하므로 호출부에서 따로 계산할 필요가 없다.
+#### Intent
+Pass all analyses to Claude in a single prompt for the final judgment.  
+Technical indicators are computed internally with `get_technical_signals(price_df)`, so the caller doesn't need to compute them separately.
 
-#### 프롬프트 구성 요소
+#### Prompt Components
 ```
-[트레이더 성향] aggressive / moderate / conservative
-[포트폴리오 상태] 현금, 보유 수량, 총 자산
-[기술적 지표] MACD, KDJ+RSI, ZMR 시그널 텍스트
-[Market Intelligence] 최신 분석 + 과거 패턴
-[LLR] 단기/중기/장기 가격 변동 분석
-[HLR] 과거 결정 평가 + 개선점
+[Trader preference] aggressive / moderate / conservative
+[Portfolio state] cash, held quantity, total assets
+[Technical indicators] MACD, KDJ+RSI, ZMR signal text
+[Market Intelligence] latest analysis + past patterns
+[LLR] short/medium/long-term price movement analysis
+[HLR] past decision evaluation + improvement points
 ```
 
-#### 안전장치
+#### Safeguard
 ```python
 action = fields["action"].strip().upper()
 if action not in ("BUY", "SELL", "HOLD"):
-    action = "HOLD"  # 예상 외 응답 → 기본값 HOLD
+    action = "HOLD"  # Unexpected response → default HOLD
 ```
 
-#### 결과 스키마
+#### Result Schema
 ```python
 class Decision(BaseModel):
     action: str      # "BUY" | "SELL" | "HOLD"
-    reasoning: str   # 결정 근거
+    reasoning: str   # Decision rationale
 ```
 
 ---
 
-### 전체 파이프라인 (`finagent/main.py`)
+### Full Pipeline (`finagent/main.py`)
 
-#### `run_day()` — 하루치 실행
+#### `run_day()` — Daily Execution
 ```python
 def run_day(symbol, stock_name, target_date, price_df, fetcher,
             portfolio, mi_module, llr_module, hlr_module, dm_module,
             trader_preference="moderate") -> Decision:
 
-    # Look-ahead bias 방지
+    # Prevent look-ahead bias
     df = price_df.loc[:pd.Timestamp(target_date)]
 
-    # 1. 데이터 수집
+    # 1. Data collection
     news        = fetcher.get_news(symbol, stock_name, target_date)
     kline_path  = fetcher.plot_kline_chart(df, target_date, symbol)
     trading_path = fetcher.plot_trading_chart(df, portfolio.recent_actions(14), ...)
@@ -492,48 +492,48 @@ def run_day(symbol, stock_name, target_date, price_df, fetcher,
                                mi_result, llr_result, hlr_result,
                                portfolio.get_state(current_price), trader_preference)
 
-    # 6. 거래 실행
+    # 6. Execute trade
     portfolio.execute(decision.action, current_price, target_date, decision.reasoning)
     return decision
 ```
 
-#### `run_backtest()` — 날짜 범위 루프
+#### `run_backtest()` — Date Range Loop
 ```python
 def run_backtest(symbol, stock_name, start, end, initial_cash=10_000_000, ...):
-    # 전체 기간 데이터를 한 번에 수집 (lookback_days = (end-start).days + 90)
-    # 백테스팅 대상 거래일 필터링
-    # 각 거래일에 run_day() 호출, 예외 발생 시 해당 일 skip하고 계속 진행
-    # 종료 후 성과 분석 + 차트 생성
+    # Collect full period data at once (lookback_days = (end-start).days + 90)
+    # Filter target trading days
+    # Call run_day() for each trading day, skip that day on exception and continue
+    # After completion: performance analysis + chart generation
 ```
 
-### Step 6 테스트 결과
+### Step 6 Test Results
 
 ```
-tests/test_step6.py — 14개 테스트 (단위 13 + 통합 1)
+tests/test_step6.py — 14 tests (13 unit + 1 integration)
 ```
 
-`TestPipelineIntegration`: 모든 Claude 모듈을 mock으로 교체하고 `run_day()`의 오케스트레이션 로직만 검증.
+`TestPipelineIntegration`: Replaces all Claude modules with mock and validates only the orchestration logic of `run_day()`.
 
 ---
 
-## Step 7 — 성과 측정
+## Step 7 — Performance Measurement
 
-**목표**: 백테스팅 결과를 수치 지표와 시각 차트로 정량화한다.
+**Goal**: Quantify backtesting results with numerical metrics and visual charts.
 
-### 의도
-단순 수익률만으로는 전략의 품질을 판단하기 어렵다. Sharpe ratio(리스크 대비 수익)와 MDD(최악의 낙폭)를 함께 봐야 전략의 견고성을 알 수 있다. Buy&Hold 벤치마크와 비교하는 것이 핵심.
+### Intent
+Simple returns alone are insufficient to judge strategy quality. Sharpe ratio (return vs. risk) and MDD (worst drawdown) must be viewed together to understand strategy robustness. Comparison against the Buy&Hold benchmark is the key.
 
-### 구현 (`finagent/utils/metrics.py`)
+### Implementation (`finagent/utils/metrics.py`)
 
-#### Equity Curve 계산
+#### Equity Curve Calculation
 ```python
 def compute_equity_curve(trades, price_df, initial_cash, buy_ratio=0.5) -> pd.Series:
-    # 거래 내역을 시간순으로 재현
-    # 각 영업일마다 cash + position * close_price 계산
-    # index: date, values: 총 포트폴리오 가치
+    # Replay trade history in chronological order
+    # Calculate cash + position * close_price for each business day
+    # index: date, values: total portfolio value
 ```
 
-#### 성과 지표
+#### Performance Metrics
 ```python
 def compute_performance(equity_curve, initial_cash, risk_free_rate=0.03) -> dict:
     # total_return_pct       = (final - initial) / initial * 100
@@ -543,75 +543,75 @@ def compute_performance(equity_curve, initial_cash, risk_free_rate=0.03) -> dict
     # volatility_annual_pct  = std(daily_returns) * sqrt(252) * 100
 ```
 
-#### 시각화
+#### Visualization
 ```
-상단 패널: FinAgent 자산곡선 vs Buy&Hold (파란선 vs 주황점선)
-          BUY: 초록 수직선 / SELL: 빨간 수직선
-하단 패널: Drawdown (빨간 fill)
-저장: charts/performance_{symbol}_{start}_{end}.png
+Upper panel: FinAgent equity curve vs Buy&Hold (blue line vs orange dashed)
+             BUY: green vertical line / SELL: red vertical line
+Lower panel: Drawdown (red fill)
+Save: charts/performance_{symbol}_{start}_{end}.png
 ```
 
-#### main.py 통합 — 백테스팅 종료 시 자동 출력
+#### main.py Integration — Auto output at end of backtesting
 ```
 ====================================================
-  백테스팅 결과: 005930  (2024-01-02 ~ 2024-03-29)
+  Backtesting Result: 005930  (2024-01-02 ~ 2024-03-29)
 ====================================================
-  최종 자산:              11,234,567원
-  총 수익률:                    +12.35%
-  연간 환산 수익률:             +52.18%
-  Sharpe Ratio:                   1.234
-  최대 낙폭 (MDD):               -5.67%
-  연간 변동성:                   18.45%
+  Final Portfolio Value:      11,234,567 KRW
+  Total Return:                   +12.35%
+  Annualized Return:              +52.18%
+  Sharpe Ratio:                    1.234
+  Max Drawdown (MDD):              -5.67%
+  Annual Volatility:              18.45%
 ----------------------------------------------------
-  Buy & Hold 수익률:             +8.90%
-  초과 수익률:                   +3.45%
+  Buy & Hold Return:               +8.90%
+  Excess Return:                   +3.45%
 ----------------------------------------------------
-  매수 횟수:                         5
-  매도 횟수:                         4
-  홀드 횟수:                        58
-  성과 차트: charts/performance_005930_....png
+  Buy count:                           5
+  Sell count:                          4
+  Hold count:                         58
+  Performance chart: charts/performance_005930_....png
 ====================================================
 ```
 
-### Step 7 테스트 결과
+### Step 7 Test Results
 
 ```
-tests/test_step7.py — 22개 테스트
+tests/test_step7.py — 22 tests
 ```
 
-| 테스트 클래스 | 케이스 수 | 주요 검증 |
+| Test Class | Case Count | Key Validations |
 |-------------|-----------|-----------|
-| `TestComputeEquityCurve` | 6 | 무거래 고정가치, BUY 후 상승, SELL 후 고정, HOLD 무영향 |
-| `TestComputeBenchmark` | 4 | 첫날 = initial_cash, 상승장 양수 수익 |
-| `TestComputePerformance` | 8 | 총수익률 계산, MDD 정확도, Sharpe 부호, 전체 키 존재 |
-| `TestPlotPerformance` | 2 | PNG 파일 생성 및 크기 > 0 |
-| `TestPortfolioGetAllTrades` | 2 | 순서 보장, 빈 포트폴리오 처리 |
+| `TestComputeEquityCurve` | 6 | No-trade fixed value, post-BUY rise, post-SELL fixed, HOLD no effect |
+| `TestComputeBenchmark` | 4 | Day 1 = initial_cash, positive return in bull market |
+| `TestComputePerformance` | 8 | Total return calculation, MDD accuracy, Sharpe sign, all key existence |
+| `TestPlotPerformance` | 2 | PNG file creation and size > 0 |
+| `TestPortfolioGetAllTrades` | 2 | Order guarantee, empty portfolio handling |
 
 ---
 
-## 최종 현황
+## Final Status
 
-### 파일 구조
+### File Structure
 ```
 finagent/
-├── data/fetcher.py               201줄
-├── memory/store.py               135줄
+├── data/fetcher.py               201 lines
+├── memory/store.py               135 lines
 ├── modules/
-│   ├── market_intelligence.py    180줄
-│   ├── low_level_reflection.py   211줄
-│   ├── high_level_reflection.py  194줄
-│   └── decision_making.py        167줄
-├── portfolio/portfolio.py        229줄
-├── tools/technical_indicators.py 144줄
+│   ├── market_intelligence.py    180 lines
+│   ├── low_level_reflection.py   211 lines
+│   ├── high_level_reflection.py  194 lines
+│   └── decision_making.py        167 lines
+├── portfolio/portfolio.py        229 lines
+├── tools/technical_indicators.py 144 lines
 ├── utils/
-│   ├── schemas.py                 62줄
-│   ├── xml_parser.py              31줄
-│   └── metrics.py                191줄
-└── main.py                       255줄
-                          총 1,907줄
+│   ├── schemas.py                 62 lines
+│   ├── xml_parser.py              31 lines
+│   └── metrics.py                191 lines
+└── main.py                       255 lines
+                          Total: 1,907 lines
 ```
 
-### 테스트 현황
+### Test Status
 ```
 Step 1:  21 tests  (18 unit + 3 integration)
 Step 2:  10 tests
@@ -621,11 +621,11 @@ Step 5:  15 tests  (14 unit + 1 integration)
 Step 6:  14 tests  (13 unit + 1 integration)
 Step 7:  22 tests
 ─────────────────────────────────────────
-합계:   119 tests  (112 unit + 7 integration)
-단위 테스트: 112/112 통과
+Total:  119 tests  (112 unit + 7 integration)
+Unit tests: 112/112 passing
 ```
 
-### 실행 방법
+### How to Run
 ```bash
 conda activate finagent
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -641,16 +641,16 @@ python finagent/main.py \
 
 ---
 
-## 주요 설계 결정 요약
+## Key Design Decision Summary
 
-| 결정 | 선택 | 대안 | 이유 |
+| Decision | Choice | Alternative | Reason |
 |------|------|------|------|
-| 주가 데이터 | pykrx | yfinance | KRX 한국 주식 전용, 무료 |
-| 뉴스 소스 | 구글 RSS | Finnhub, NewsAPI | API 키 불필요, 한국 주식 뉴스 품질 |
-| 벡터 DB | ChromaDB | FAISS | 로컬 실행, 메타데이터 필터, 단순한 API |
-| 임베딩 | all-MiniLM-L6-v2 | OpenAI ada | 무료, 로컬, 다국어 지원 |
-| LLM | claude-sonnet-4-6 | claude-opus | 비용/성능 균형 |
-| 포트폴리오 저장 | SQLite | PostgreSQL, Redis | 파일 하나, 외부 서버 불필요 |
-| XML 파싱 | 직접 구현 (regex) | lxml, BeautifulSoup | 경량, Claude 응답 특성에 최적화 |
-| 기술적 지표 주입 | 텍스트 시그널로 변환 | 수치 직접 전달 | LLM이 의미를 바로 이해할 수 있는 형태 |
-| Look-ahead bias | `df.loc[:target_date]` 슬라이싱 | 별도 API 호출 | 성능 오버헤드 없이 미래 데이터 차단 |
+| Stock price data | pykrx | yfinance | Dedicated to KRX Korean stocks, free |
+| News source | Google RSS | Finnhub, NewsAPI | No API key required, quality Korean stock news |
+| Vector DB | ChromaDB | FAISS | Local execution, metadata filtering, simple API |
+| Embeddings | all-MiniLM-L6-v2 | OpenAI ada | Free, local, multilingual support |
+| LLM | claude-sonnet-4-6 | claude-opus | Cost/performance balance |
+| Portfolio storage | SQLite | PostgreSQL, Redis | Single file, no external server required |
+| XML parsing | Custom implementation (regex) | lxml, BeautifulSoup | Lightweight, optimized for Claude response characteristics |
+| Technical indicator injection | Convert to text signals | Pass raw numbers directly | Form that the LLM can immediately understand the meaning of |
+| Look-ahead bias | `df.loc[:target_date]` slicing | Separate API calls | Block future data without performance overhead |

@@ -1,43 +1,43 @@
-# FinAgent Web UI 구현 계획
+# FinAgent Web UI Implementation Plan
 
-> 이 파일은 구현 시작 시 `plan/web_ui_plan.md`로 복사됩니다.
+> This file is copied to `plan/web_ui_plan.md` at the start of implementation.
 
 ---
 
 ## Context
 
-FinAgent는 현재 CLI 전용 백테스팅 도구입니다. 사용자가 웹 브라우저에서 백테스트 파라미터를 입력하고, 실행 진행 상황을 실시간으로 확인하며, 결과(수익률·차트·거래내역)를 바로 볼 수 있도록 Web 기반 UI를 추가합니다.
+FinAgent is currently a CLI-only backtesting tool. We are adding a web-based UI so users can enter backtest parameters in a web browser, monitor execution progress in real-time, and immediately view results (returns·charts·trade history).
 
-**핵심 제약**: 하루치 백테스트(run_day)마다 Claude API 3~4회 호출 → 3개월 백테스트 = 30분 이상. UI에서 실시간 진행률을 보여주지 않으면 사용 불가.
+**Key constraint**: Up to 3~4 Claude API calls per day's backtest (`run_day`) → 3-month backtest = 30+ minutes. Without showing real-time progress in the UI, it is unusable.
 
 ---
 
-## 기술 스택 결정
+## Technology Stack Decision
 
 **FastAPI + SSE (Server-Sent Events) + Vanilla HTML/CSS/JS**
 
-| 비교 | FastAPI+SSE | Streamlit |
+| Comparison | FastAPI+SSE | Streamlit |
 |------|-------------|-----------|
-| 장시간 백그라운드 작업 | ThreadPoolExecutor로 격리, SSE로 스트리밍 | 스크립트 재실행 모델 — 블로킹 함수와 충돌 |
-| 커스텀 UI | 완전한 HTML/CSS 제어 | 제한적 |
-| 동시 실행 격리 | job별 독립 디렉토리 | 세션 상태 복잡 |
+| Long-running background tasks | Isolated with ThreadPoolExecutor, streamed via SSE | Script re-execution model — conflicts with blocking functions |
+| Custom UI | Full HTML/CSS control | Limited |
+| Concurrent execution isolation | Independent directory per job | Complex session state |
 
-**결정**: FastAPI + SSE. `workers=1` (인-프로세스 job store 사용).
+**Decision**: FastAPI + SSE. `workers=1` (using in-process job store).
 
 ---
 
-## 최종 파일 구조
+## Final File Structure
 
 ```
 FinAgent/
 ├── finagent/
-│   └── main.py                    ← 수정: progress_callback 파라미터 추가
+│   └── main.py                    ← Modify: add progress_callback parameter
 │
 ├── web/
 │   ├── __init__.py
-│   ├── app.py                     ← FastAPI 앱 팩토리
-│   ├── job_store.py               ← 인메모리 Job 상태 관리
-│   ├── schemas.py                 ← API 요청/응답 Pydantic 모델
+│   ├── app.py                     ← FastAPI app factory
+│   ├── job_store.py               ← In-memory job state management
+│   ├── schemas.py                 ← API request/response Pydantic models
 │   └── routes/
 │       ├── __init__.py
 │       ├── backtest.py            ← POST /api/backtest, GET /api/backtest/{id}/stream
@@ -45,27 +45,27 @@ FinAgent/
 │       └── charts.py              ← GET /charts/{job_id}/{filename}
 │
 ├── web/static/
-│   ├── index.html                 ← 단일 페이지 UI (폼 → 진행 → 결과)
+│   ├── index.html                 ← Single-page UI (form → progress → results)
 │   ├── style.css
-│   └── app.js                     ← SSE EventSource 클라이언트
+│   └── app.js                     ← SSE EventSource client
 │
-├── job_data/                      ← 런타임 생성 (gitignore)
+├── job_data/                      ← Runtime-generated (gitignore)
 │   └── {job_id}/
 │       ├── portfolio.db
 │       ├── memory_db/
 │       └── charts/
 │
-├── run_web.py                     ← 서버 진입점
-└── requirements.txt               ← fastapi, uvicorn[standard] 추가
+├── run_web.py                     ← Server entry point
+└── requirements.txt               ← Add fastapi, uvicorn[standard]
 ```
 
 ---
 
-## 수정 파일
+## Files to Modify
 
 ### `finagent/main.py`
 
-`run_backtest()` 시그니처에 `progress_callback` 파라미터 추가:
+Add `progress_callback` parameter to `run_backtest()` signature:
 
 ```python
 from typing import Callable, Optional
@@ -102,7 +102,7 @@ def run_backtest(
     ...
 ```
 
-`run_day()`와 다른 모듈은 변경 없음.
+`run_day()` and other modules remain unchanged.
 
 ### `requirements.txt`
 
@@ -113,7 +113,7 @@ uvicorn[standard]>=0.30.0
 
 ---
 
-## 신규 파일 상세
+## New File Details
 
 ### `web/job_store.py`
 
@@ -157,22 +157,22 @@ class BacktestRequest(BaseModel):
     trader_preference: str = "moderate"   # aggressive | moderate | conservative
 ```
 
-### `web/routes/backtest.py` (핵심 로직)
+### `web/routes/backtest.py` (Core Logic)
 
 **POST `/api/backtest`**:
-1. `ANTHROPIC_API_KEY` 존재 여부 확인 → 없으면 HTTP 400
-2. 날짜 유효성 검사 (end > start, 범위 ≤ 365일)
-3. `create_job()` → job별 격리 디렉토리 생성
-4. `asyncio.create_task(run_in_thread())` 로 백테스트 비동기 실행
-5. `{job_id, stream_url}` 즉시 반환
+1. Check `ANTHROPIC_API_KEY` existence → HTTP 400 if missing
+2. Date validation (end > start, range ≤ 365 days)
+3. `create_job()` → Create isolated directory per job
+4. `asyncio.create_task(run_in_thread())` for async backtest execution
+5. Immediately return `{job_id, stream_url}`
 
 **GET `/api/backtest/{job_id}/stream`** (SSE):
 ```python
 async def event_generator():
-    # 1. 이미 쌓인 이벤트 리플레이 (재연결 대응)
+    # 1. Replay accumulated events (handle reconnection)
     for evt in job.events:
         yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
-    # 2. 새 이벤트 스트리밍
+    # 2. Stream new events
     while True:
         evt = await asyncio.wait_for(job.queue.get(), timeout=30.0)
         yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
@@ -180,9 +180,9 @@ async def event_generator():
             break
 ```
 
-**스레드 → asyncio 브리지**:
+**Thread → asyncio Bridge**:
 ```python
-# progress_callback (동기, 스레드에서 실행)
+# progress_callback (synchronous, runs in thread)
 def progress_callback(day_index, total_days, current_date, action, reasoning):
     event = {"type": "progress", "day": day_index, "total": total_days,
              "date": str(current_date), "action": action,
@@ -191,16 +191,16 @@ def progress_callback(day_index, total_days, current_date, action, reasoning):
     asyncio.get_event_loop().call_soon_threadsafe(job.queue.put_nowait, event)
 ```
 
-### SSE 이벤트 스키마
+### SSE Event Schema
 
 ```
-# 진행 이벤트 (거래일마다 1회)
+# Progress event (once per trading day)
 data: {"type":"progress","day":1,"total":62,"date":"2024-01-02","action":"HOLD","reasoning":"...","pct":1.6}
 
-# 완료 이벤트 (1회)
+# Completion event (once)
 data: {"type":"done","result":{"total_return_pct":12.5,"sharpe_ratio":1.23,...}}
 
-# 에러 이벤트
+# Error event
 data: {"type":"error","message":"Claude API rate limit exceeded"}
 ```
 
@@ -231,17 +231,17 @@ app.include_router(charts.router)
 app.mount("/", StaticFiles(directory="web/static", html=True), name="static")
 ```
 
-### `web/static/index.html` — 3단계 단일 페이지
+### `web/static/index.html` — 3-Panel Single Page
 
-1. **폼 패널**: symbol, stock_name, start, end, initial_cash, preference 입력
-2. **진행 패널** (제출 후 표시):
-   - `<progress>` 진행 바 (현재일 / 전체일)
-   - 스크롤 로그: `날짜 | BUY/SELL/HOLD 뱃지 | reasoning 요약`
-3. **결과 패널** (`done` 이벤트 수신 시 표시):
-   - KPI 카드: 총 수익률, 연간 수익률, Sharpe Ratio, MDD, 벤치마크 대비 초과수익률
-   - 거래 카운트: BUY / SELL / HOLD 횟수
-   - 성과 차트 이미지 (`performance_{symbol}_{start}_{end}.png`)
-   - 거래 내역 테이블 (date, action, price, quantity, reasoning)
+1. **Form panel**: Input symbol, stock_name, start, end, initial_cash, preference
+2. **Progress panel** (shown after submit):
+   - `<progress>` bar (current day / total days)
+   - Scrollable log: `date | BUY/SELL/HOLD badge | reasoning summary`
+3. **Results panel** (shown when `done` event received):
+   - KPI cards: total return, annual return, Sharpe Ratio, MDD, excess return vs benchmark
+   - Trade counts: BUY / SELL / HOLD count
+   - Performance chart image (`performance_{symbol}_{start}_{end}.png`)
+   - Trade history table (date, action, price, quantity, reasoning)
 
 ### `web/static/app.js`
 
@@ -283,59 +283,61 @@ if __name__ == "__main__":
 
 ---
 
-## Job 격리 전략
+## Job Isolation Strategy
 
-각 백테스트 job은 `job_data/{job_id}/` 하위에 독립 디렉토리를 사용합니다:
-- `portfolio.db` — SQLite 동시 쓰기 충돌 방지
-- `memory_db/` — ChromaDB PersistentClient 디렉토리 잠금 충돌 방지
-- `charts/` — 차트 파일 네이밍 충돌 방지
+Each backtest job uses an independent directory under `job_data/{job_id}/`:
+- `portfolio.db` — Prevent SQLite concurrent write conflicts
+- `memory_db/` — Prevent ChromaDB PersistentClient directory lock conflicts
+- `charts/` — Prevent chart file naming conflicts
 
-`workers=1` 설정 필수 (인-프로세스 `_jobs` 딕셔너리 공유 불가).
-
----
-
-## 에러 처리
-
-| 상황 | 처리 |
-|------|------|
-| ANTHROPIC_API_KEY 미설정 | `POST /api/backtest` → HTTP 400 즉시 반환 |
-| 잘못된 파라미터 | Pydantic 검증 → HTTP 422 필드별 상세 |
-| 특정 일자 Claude 오류 | 기존 `except Exception` 로 skip, 스트림 계속 |
-| 전체 backtest 실패 | SSE `error` 이벤트 전송 |
-| SSE 연결 끊김 | EventSource 자동 재연결 + `job.events` 리플레이 |
+`workers=1` setting is required (in-process `_jobs` dictionary cannot be shared).
 
 ---
 
-## 구현 순서
+## Error Handling
 
-1. `finagent/main.py` — `progress_callback` 파라미터 추가 및 CLI 검증
-2. `web/job_store.py` + `web/schemas.py` 생성
-3. `web/routes/backtest.py` — SSE 스트리밍 핵심 로직
-4. `web/routes/results.py` + `web/routes/charts.py` 생성
-5. `web/app.py` + `run_web.py` 생성
-6. `web/static/` — index.html → style.css → app.js 순서로 UI 구현
-7. `requirements.txt` 업데이트
-8. 통합 테스트: 짧은 날짜 범위(1~2주)로 실제 백테스트 실행
+| Situation | Handling | Reason |
+|------|-----------|------|
+| `ANTHROPIC_API_KEY` not set | `POST /api/backtest` → HTTP 400 immediately | Block before job creation. Failure after 30-minute task starts cannot be recovered |
+| Invalid parameters | Pydantic ValidationError → HTTP 422 per-field detail | Automatic handling without route code |
+| Claude API error on specific day | Existing `except Exception` skips, stream continues | One day's error should not stop the entire backtest. Maintains existing `main.py` design |
+| Full backtest failure (external exception in `run_in_thread`) | Send SSE `error` event → frontend error banner | |
+| SSE connection drop | `EventSource` auto-reconnect + `job.events` replay | Can view from the beginning on reconnect |
+| Chart file Path Traversal attempt | HTTP 400 if `..`, `/`, `\` present | Block access to files outside `job_data/` |
 
 ---
 
-## 검증 방법
+## Implementation Order
+
+1. `finagent/main.py` — Add `progress_callback` parameter and CLI validation
+2. `web/job_store.py` + `web/schemas.py` creation
+3. `web/routes/backtest.py` — SSE streaming core logic
+4. `web/routes/results.py` + `web/routes/charts.py` creation
+5. `web/app.py` + `run_web.py` creation
+6. `web/static/` — Implement UI in order: index.html → style.css → app.js
+7. Update `requirements.txt`
+8. Integration test: Run actual backtest with short date range (1~2 weeks)
+
+---
+
+## Verification Method
 
 ```bash
-# 의존성 설치
+# Install dependencies
 pip install fastapi "uvicorn[standard]"
 
-# 서버 실행
+# Start server
 export ANTHROPIC_API_KEY=sk-ant-...
 python run_web.py
 
-# 브라우저에서 http://localhost:8000 접속
-# symbol: 005930, stock_name: 삼성전자, 짧은 날짜 범위로 테스트
+# Access http://localhost:8000 in browser
+# symbol: 005930, stock_name: 삼성전자, test with short date range
 ```
 
-확인 항목:
-- [ ] 폼 제출 → 즉시 진행 패널 전환
-- [ ] 거래일마다 로그 항목 추가, 진행 바 업진
-- [ ] 완료 후 KPI 카드·차트·거래 테이블 표시
-- [ ] 브라우저 탭 닫고 재접속 → SSE 이벤트 리플레이로 진행 상태 복원
-- [ ] ANTHROPIC_API_KEY 미설정 상태에서 에러 메시지 표시
+Checklist:
+- [ ] Form submit → immediately switch to progress panel
+- [ ] Log item added per trading day, progress bar updates
+- [ ] After completion: KPI cards·performance chart·trade history displayed
+- [ ] Close browser tab and reopen → event replay restores current state
+- [ ] `end < start` input → HTTP 422 immediately returned
+- [ ] Daily chart browser: Kline / Trading tab switching, per-date chart display

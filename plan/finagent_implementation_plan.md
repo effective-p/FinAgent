@@ -1,132 +1,132 @@
-# FinAgent 구현 계획
+# FinAgent Implementation Plan
 
-논문의 핵심 구조를 단순화해서 실제로 돌아가는 시스템을 만드는 방향으로 계획을 세웁니다.
+Planning a simplified version of the paper's core structure that actually runs.
 
 ---
 
-## 전체 아키텍처 요약
+## Overall Architecture Summary
 
 ```
-[데이터 수집] → [Market Intelligence] → [Reflection] → [Decision]
+[Data Collection] → [Market Intelligence] → [Reflection] → [Decision]
                         ↕                     ↕
                     [Memory (Vector DB)]
 ```
 
 ---
 
-## 기술 스택 선택
+## Technology Stack Selection
 
-### 언어 & 런타임
+### Language & Runtime
 - Python 3.11+
 
 ### LLM
-- `claude-sonnet-4-20250514` — 텍스트 분석, 반성 모듈, 의사결정
-- `claude-opus-4-20250514` — 선택적으로 고난이도 reasoning에 사용 가능
+- `claude-sonnet-4-20250514` — text analysis, reflection modules, decision making
+- `claude-opus-4-20250514` — optionally usable for high-difficulty reasoning
 
 ### Vector DB (Memory)
-- `ChromaDB` — 로컬에서 바로 쓸 수 있고, 설치가 단순함. FAISS도 가능하지만 ChromaDB가 메타데이터 필터링이 편함
+- `ChromaDB` — usable locally right away, simple installation. FAISS is also possible, but ChromaDB has more convenient metadata filtering
 
-### 임베딩
-- `sentence-transformers` (all-MiniLM-L6-v2) — 무료, 로컬 실행
+### Embeddings
+- `sentence-transformers` (all-MiniLM-L6-v2) — free, local execution
 
-### 데이터 수집
-- `krx_price` — pykrx로 OHLCV + 등락률 반환
-- `google_news` — 종목명 기반 뉴스 RSS 
-- `pandas_ta` — 기술적 지표 (MACD, KDJ, RSI, Bollinger Bands)
+### Data Collection
+- `krx_price` — OHLCV + change rates via pykrx
+- `google_news` — News RSS based on stock name
+- `pandas_ta` — Technical indicators (MACD, KDJ, RSI, Bollinger Bands)
 
-### 시각화 (Kline/Trading Chart)
-- `mplfinance` — Kline 차트 생성 → 이미지로 저장 후 Claude Vision에 전달
+### Visualization (Kline/Trading Chart)
+- `mplfinance` — Kline chart generation → save as image and pass to Claude Vision
 
-### 기타
-- `pydantic` — 모듈 간 데이터 스키마 정의
-- `sqlite3` — 거래 히스토리 저장 (가볍게)
+### Other
+- `pydantic` — Inter-module data schema definitions
+- `sqlite3` — Trade history storage (lightweight)
 
 ---
 
-## 모듈별 구현 계획
+## Module-by-Module Implementation Plan
 
-### 1. 데이터 레이어
+### 1. Data Layer
 
 ```python
 # data_layer.py
 class DataFetcher:
     def get_price_data(symbol, lookback_days)  # krx_price
     def get_news(symbol, date)                 # google_news
-    def get_technical_indicators(df)           # pandas_ta로 MACD, RSI, KDJ, BB 계산
-    def plot_kline_chart(df) -> image_path     # mplfinance → PNG 저장
+    def get_technical_indicators(df)           # MACD, RSI, KDJ, BB via pandas_ta
+    def plot_kline_chart(df) -> image_path     # mplfinance → PNG save
     def plot_trading_chart(df, actions) -> image_path
 ```
 
 ---
 
-### 2. Memory 모듈
+### 2. Memory Module
 
-ChromaDB에 3개의 컬렉션을 만들어서 각 모듈이 독립적으로 저장/조회하게 구성합니다.
+Create 3 collections in ChromaDB so each module stores/queries independently.
 
 ```python
 # memory.py
 class MemoryStore:
     collections:
-        - "market_intelligence"   # MI 요약 + query 텍스트
-        - "low_level_reflection"  # LLR 결과
-        - "high_level_reflection" # HLR 결과
+        - "market_intelligence"   # MI summary + query text
+        - "low_level_reflection"  # LLR results
+        - "high_level_reflection" # HLR results
 
     def add(collection, text, metadata)
     def retrieve(collection, query_text, top_k=3) -> List[str]
 ```
 
-**Diversified Retrieval 구현 방식:**
+**Diversified Retrieval Implementation:**
 
-논문의 핵심 아이디어는 "trading용 요약"과 "retrieval용 query"를 분리하는 것입니다. Claude에게 MI를 분석할 때 `short_term_query`, `medium_term_query`, `long_term_query`를 별도 필드로 출력하게 프롬프트를 설계하고, 각 query로 ChromaDB를 따로 검색해서 결과를 합칩니다.
+The core idea of the paper is to separate the "trading summary" from the "retrieval query". Design the prompt so Claude outputs `short_term_query`, `medium_term_query`, `long_term_query` as separate fields during MI analysis, then search ChromaDB independently with each query and combine results.
 
 ```python
-# retrieval 방식
+# retrieval approach
 results = []
 for query in [short_term_q, medium_term_q, long_term_q]:
     results += memory.retrieve("market_intelligence", query, top_k=2)
-# → 최대 6개의 과거 MI를 다양한 관점으로 수집
+# → Collect up to 6 past MI records from diverse perspectives
 ```
 
 ---
 
-### 3. Market Intelligence 모듈
+### 3. Market Intelligence Module
 
 ```python
 # market_intelligence.py
 class MarketIntelligenceModule:
 
     def run(symbol, date, price_df, news_list) -> MIResult:
-        # Step 1: Claude에게 최신 뉴스+가격 분석 요청
+        # Step 1: Request Claude to analyze latest news + prices
         latest_mi = self._analyze_latest(news_list, price_df)
-        # → summary (trading용) + query_texts (retrieval용) 반환
+        # → Returns summary (for trading) + query_texts (for retrieval)
 
-        # Step 2: Diversified Retrieval로 과거 MI 검색
+        # Step 2: Search past MI via Diversified Retrieval
         past_mi_docs = self._diversified_retrieve(latest_mi.queries)
 
-        # Step 3: 과거 MI 요약 생성
+        # Step 3: Generate past MI summary
         past_mi_summary = self._summarize_past(past_mi_docs)
 
-        # Step 4: 최신 MI를 memory에 저장
+        # Step 4: Store latest MI in memory
         memory.add("market_intelligence", latest_mi.summary,
                    metadata={"date": date, "queries": latest_mi.queries})
 
         return MIResult(latest_summary, past_summary)
 ```
 
-**Claude 호출 예시 (XML 출력 강제):**
+**Claude Call Example (XML output enforced):**
 
 ```python
 prompt = f"""
-뉴스: {news_text}
-가격: {price_data}
+News: {news_text}
+Price: {price_data}
 
-다음 XML 형식으로만 응답하세요:
+Respond only in the following XML format:
 <output>
-  <string name="summary">trading용 요약</string>
+  <string name="summary">trading summary</string>
   <map name="query">
-    <string name="short_term_query">단기 검색어</string>
-    <string name="medium_term_query">중기 검색어</string>
-    <string name="long_term_query">장기 검색어</string>
+    <string name="short_term_query">short-term search query</string>
+    <string name="medium_term_query">medium-term search query</string>
+    <string name="long_term_query">long-term search query</string>
   </map>
 </output>
 """
@@ -136,9 +136,9 @@ prompt = f"""
 
 ### 4. Low-Level Reflection (LLR)
 
-가격 변동과 Market Intelligence 간의 연결 관계를 분석합니다.
+Analyzes the relationship between price movements and Market Intelligence.
 
-| 항목 | 내용 |
+| Item | Content |
 |------|------|
 | Target | Price Movements |
 | Visual Data | Kline Chart |
@@ -149,33 +149,33 @@ prompt = f"""
 # reflection.py
 class LowLevelReflection:
     def run(mi_result, kline_image_path, price_changes) -> LLRResult:
-        # Claude Vision으로 Kline 차트 이미지 + 가격변동 데이터 + MI 요약 전달
-        # 단기/중기/장기 가격 변동 reasoning 생성
-        # query 필드도 함께 생성 → memory 저장
+        # Pass Kline chart image + price change data + MI summary to Claude Vision
+        # Generate short/medium/long-term price movement reasoning
+        # Also generate query field → store in memory
 
         response = claude.messages.create(
             model="claude-sonnet-4-20250514",
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "image", "source": {"type": "base64", ...}},  # kline 차트
+                    {"type": "image", "source": {"type": "base64", ...}},  # kline chart
                     {"type": "text", "text": prompt}
                 ]
             }]
         )
 ```
 
-**입력:** MI 요약 + Kline 차트 이미지 + 과거 N일 / 미래 N일 가격 변동률
+**Input:** MI summary + Kline chart image + price change rates for past N days / future N days
 
-**출력:** `short_term_reasoning`, `medium_term_reasoning`, `long_term_reasoning`, `query`
+**Output:** `short_term_reasoning`, `medium_term_reasoning`, `long_term_reasoning`, `query`
 
 ---
 
 ### 5. High-Level Reflection (HLR)
 
-과거 거래 결정의 잘잘못을 반성합니다.
+Reflects on the correctness of past trading decisions.
 
-| 항목 | 내용 |
+| Item | Content |
 |------|------|
 | Target | Trading Decisions |
 | Visual Data | Trading Chart |
@@ -186,15 +186,15 @@ class LowLevelReflection:
 class HighLevelReflection:
     def run(mi_result, llr_result, trading_chart_path,
             past_actions_and_reasoning) -> HLRResult:
-        # trading 차트 이미지 + 과거 14일 액션 + reasoning 전달
-        # 각 결정이 옳았는지 평가
-        # 개선 방안 제시
-        # summary + query 생성 → memory 저장
+        # Pass trading chart image + past 14 days of actions + reasoning
+        # Evaluate whether each decision was correct
+        # Suggest improvement plans
+        # Generate summary + query → store in memory
 ```
 
-**입력:** MI 요약 + LLR 결과 + Trading 차트 이미지 + 과거 액션 로그
+**Input:** MI summary + LLR result + Trading chart image + past action log
 
-**출력:** `reasoning`, `improvement`, `summary`, `query`
+**Output:** `reasoning`, `improvement`, `summary`, `query`
 
 ---
 
@@ -205,16 +205,16 @@ class DecisionMakingModule:
     def run(mi_result, llr_result, hlr_result,
             technical_signals, trader_preference) -> Decision:
 
-        # technical_signals: MACD/KDJ&RSI/ZMR 계산 결과를 텍스트로 변환
+        # technical_signals: MACD/KDJ&RSI/ZMR results converted to text
         # trader_preference: "aggressive" or "conservative"
-        # 현재 포지션, 현금 잔고도 함께 전달
+        # Also pass current position and cash balance
 
-        # Claude가 BUY/HOLD/SELL + reasoning 반환
+        # Claude returns BUY/HOLD/SELL + reasoning
 ```
 
-**Augmented Tools (단순화):**
+**Augmented Tools (simplified):**
 
-논문의 expert guidance는 구현이 복잡하므로, 기술적 지표(MACD, KDJ+RSI, ZMR)의 시그널만 텍스트로 계산해서 LLM 프롬프트에 주입합니다.
+Since the paper's expert guidance is complex to implement, only the signals from technical indicators (MACD, KDJ+RSI, ZMR) are computed and injected as text into the LLM prompt.
 
 ```python
 def get_technical_signals(df) -> str:
@@ -226,13 +226,13 @@ def get_technical_signals(df) -> str:
 
 ---
 
-## 전체 실행 흐름
+## Full Execution Flow
 
 ```python
-# main.py - 하루치 실행
+# main.py - daily execution
 def run_step(symbol, date, portfolio):
 
-    # 1. 데이터 수집
+    # 1. Data collection
     price_df = fetcher.get_price_data(symbol)
     news = fetcher.get_news(symbol, date)
     kline_path = fetcher.plot_kline_chart(price_df)
@@ -256,61 +256,61 @@ def run_step(symbol, date, portfolio):
     decision = dm_module.run(mi_result, llr_result, hlr_result,
                              tech_signals, portfolio)
 
-    # 6. 거래 실행 & 결과 저장
+    # 6. Execute trade & save results
     portfolio.execute(decision.action, price_df.iloc[-1]['close'])
     return decision
 ```
 
 ---
 
-## 프로젝트 구조
+## Project Structure
 
 ```
 finagent/
 ├── data/
-│   └── fetcher.py                   # pykrx + 뉴스 + 차트 생성
+│   └── fetcher.py                   # pykrx + news + chart generation
 ├── memory/
-│   └── store.py                     # ChromaDB 래퍼
+│   └── store.py                     # ChromaDB wrapper
 ├── modules/
 │   ├── market_intelligence.py
 │   ├── low_level_reflection.py
 │   ├── high_level_reflection.py
 │   └── decision_making.py
 ├── tools/
-│   └── technical_indicators.py      # MACD, RSI, KDJ, ZMR 시그널
+│   └── technical_indicators.py      # MACD, RSI, KDJ, ZMR signals
 ├── portfolio/
-│   └── portfolio.py                 # 포지션/현금/거래내역 관리
+│   └── portfolio.py                 # Position/cash/trade history management
 ├── utils/
-│   └── xml_parser.py                # Claude 응답 XML 파싱
-└── main.py                          # 백테스팅 루프
+│   └── xml_parser.py                # Claude response XML parsing
+└── main.py                          # Backtesting loop
 ```
 
 ---
 
-## 단계별 구현 순서
+## Implementation Order
 
-| 단계 | 내용 | 핵심 도구 |
+| Step | Content | Key Tools |
 |------|------|-----------|
-| 1단계 | `DataFetcher` + `Portfolio` + `TechnicalIndicators` 구현 및 테스트 | pykrx, pandas_ta, mplfinance |
-| 2단계 | `MemoryStore` (ChromaDB) 구현, 저장/조회 테스트 | ChromaDB, sentence-transformers |
-| 3단계 | `MarketIntelligenceModule` 구현 (Diversified Retrieval 포함) | Anthropic API, ChromaDB |
-| 4단계 | `LowLevelReflection` 구현 (Vision API 활용) | Anthropic API (Vision) |
-| 5단계 | `HighLevelReflection` 구현 | Anthropic API (Vision) |
-| 6단계 | `DecisionMakingModule` 구현 + 전체 파이프라인 연결 | Anthropic API |
-| 7단계 | 단일 종목 백테스팅 실행 및 성능 측정 | 전체 시스템 |
+| Step 1 | Implement & test `DataFetcher` + `Portfolio` + `TechnicalIndicators` | pykrx, pandas_ta, mplfinance |
+| Step 2 | Implement `MemoryStore` (ChromaDB), test store/retrieve | ChromaDB, sentence-transformers |
+| Step 3 | Implement `MarketIntelligenceModule` (including Diversified Retrieval) | Anthropic API, ChromaDB |
+| Step 4 | Implement `LowLevelReflection` (using Vision API) | Anthropic API (Vision) |
+| Step 5 | Implement `HighLevelReflection` | Anthropic API (Vision) |
+| Step 6 | Implement `DecisionMakingModule` + integrate full pipeline | Anthropic API |
+| Step 7 | Run single-stock backtesting and measure performance | Full system |
 
 ---
 
-## 참고 API 및 라이브러리
+## Reference APIs and Libraries
 
-| 용도 | 라이브러리 / API | 비용 |
+| Purpose | Library / API | Cost |
 |------|-----------------|------|
-| 주가 데이터 | `pykrx` | 무료 |
-| 뉴스 데이터 | `google_news` | 무료 |
-| 기술적 지표 | `pandas_ta` | 무료 |
-| Kline 차트 | `mplfinance` | 무료 |
-| LLM (텍스트+비전) | Anthropic Claude API | 유료 |
-| Vector DB | `ChromaDB` | 무료 (로컬) |
-| 임베딩 | `sentence-transformers` | 무료 (로컬) |
-| 데이터 스키마 | `pydantic` | 무료 |
-| 거래 히스토리 | `sqlite3` | 무료 (내장) |
+| Stock price data | `pykrx` | Free |
+| News data | `google_news` | Free |
+| Technical indicators | `pandas_ta` | Free |
+| Kline charts | `mplfinance` | Free |
+| LLM (text+vision) | Anthropic Claude API | Paid |
+| Vector DB | `ChromaDB` | Free (local) |
+| Embeddings | `sentence-transformers` | Free (local) |
+| Data schemas | `pydantic` | Free |
+| Trade history | `sqlite3` | Free (built-in) |
