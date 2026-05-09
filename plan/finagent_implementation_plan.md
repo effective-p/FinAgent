@@ -20,7 +20,7 @@ Planning a simplified version of the paper's core structure that actually runs.
 - Python 3.11+
 
 ### LLM
-- `claude-sonnet-4-20250514` — text analysis, reflection modules, decision making
+- `claude-sonnet-4-20250514` — text, vision analysis, reflection modules, decision making
 - `claude-opus-4-20250514` — optionally usable for high-difficulty reasoning
 
 ### Vector DB (Memory)
