@@ -258,10 +258,10 @@ ChromaDB maintains 3 independent collections, with each module reading from and 
 │  ┌─────────────────────┐  ┌──────────────────────┐  ┌─────────────────────────┐ │
 │  │ market_intelligence │  │ low_level_reflection │  │  high_level_reflection  │ │
 │  │                     │  │                      │  │                         │ │
-│  │  Store: MI summary  │  │  Store: short+medium │  │                         │ │
+│  │  Store: MI summary  │  │  Store: short+medium │  │    Store: summary       │ │
 │  │  Meta: symbol, date,│  │  +long reasoning     │  │                         │ │
 │  │  short/medium/long  │  │  combined text       │  │                         │ │
-│  │  term_query         │  │  Meta: symbol, date  │  │     Store: summary      │ │
+│  │  term_query         │  │  Meta: symbol, date  │  │                         │ │
 │  └─────────────────────┘  └──────────────────────┘  └─────────────────────────┘ │
 │           ↑ ↓                      ↑ ↓                           ↑ ↓            │
 │           MI                       LLR                           HLR            │
