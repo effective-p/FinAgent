@@ -444,6 +444,11 @@ The backtesting loop slices with `price_df.loc[:target_date]` to ensure future d
 
 ---
 
+## Backtesting Result
+![Backtesting](assets/backtesting_result.png)
+
+---
+
 ## References
 
 - Paper: [A Multimodal Foundation Agent for Financial Trading (arxiv 2402.18485)](https://arxiv.org/abs/2402.18485)
