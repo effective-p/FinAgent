@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinAgent 백테스팅 결과</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, "Noto Sans KR", sans-serif;
+    background: #ffffff;
+    color: #1a1a1a;
+    padding: 48px 40px;
+    max-width: 860px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+
+  .paper-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: #555;
+    text-align: center;
+    margin: 0 0 4px;
+    letter-spacing: 0.04em;
+  }
+
+  .paper-caption {
+    font-size: 14px;
+    color: #111;
+    text-align: center;
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+
+  .paper-note {
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+    margin: 0 0 20px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead tr.top-head th {
+    border-top: 1.5px solid #111;
+    border-bottom: 0.5px solid #111;
+    padding: 8px 10px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #111;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  thead tr.top-head th.lh { text-align: left; }
+
+  thead tr.sub-head th {
+    font-size: 12px;
+    font-weight: 400;
+    color: #444;
+    padding: 4px 10px 8px;
+    text-align: center;
+    border-bottom: 0.5px solid #888;
+  }
+
+  thead tr.sub-head th.lh { text-align: left; }
+
+  tbody td {
+    padding: 7px 10px;
+    text-align: center;
+    color: #111;
+    border-bottom: 0.5px solid #ddd;
+    font-size: 13px;
+    vertical-align: middle;
+  }
+
+  tbody td.lh {
+    text-align: left;
+    font-weight: 400;
+    white-space: nowrap;
+    padding-right: 18px;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 1.5px solid #111;
+  }
+
+  .best { font-weight: 600; }
+  .pos-val { color: #C0392B; }
+  .neg-val { color: #1A5EA8; }
+
+  .section-row td {
+    background: #f5f5f5;
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 5px 10px;
+    border-bottom: 0.5px solid #ccc;
+  }
+
+  .footnote {
+    font-size: 12px;
+    color: #555;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 0.5px solid #bbb;
+    line-height: 1.7;
+  }
+
+  .footnote sup { font-size: 10px; }
+</style>
+</head>
+<body>
+
+  <p class="paper-title">Table 1</p>
+  <p class="paper-caption">한국 주식시장 백테스팅 결과 (2026.04.02 – 2026.05.07)</p>
+  <p class="paper-note">초기 투자금: 종목당 10,000,000원 &nbsp;·&nbsp; 평가 기간: 25거래일</p>
+
+  <table>
+    <thead>
+      <tr class="top-head">
+        <th class="lh" rowspan="2" style="vertical-align:bottom; padding-bottom:8px;">지표</th>
+        <th colspan="5">종목</th>
+      </tr>
+      <tr class="sub-head">
+        <th>삼성전자<br><span style="font-size:11px;color:#888;">005930</span></th>
+        <th>에이비엘바이오<br><span style="font-size:11px;color:#888;">298380</span></th>
+        <th>리노공업<br><span style="font-size:11px;color:#888;">058470</span></th>
+        <th>현대차<br><span style="font-size:11px;color:#888;">005380</span></th>
+        <th>두산에너빌리티<br><span style="font-size:11px;color:#888;">034020</span></th>
+      </tr>
+    </thead>
+    <tbody>
+
+      <tr class="section-row"><td colspan="6">수익성</td></tr>
+      <tr>
+        <td class="lh">최종 자산 (원)</td>
+        <td class="best">12,956,909</td>
+        <td>9,521,943</td>
+        <td>9,997,831</td>
+        <td>9,743,327</td>
+        <td class="best">12,766,936</td>
+      </tr>
+      <tr>
+        <td class="lh">총 수익률</td>
+        <td class="pos-val best">+29.57%</td>
+        <td class="neg-val">−4.78%</td>
+        <td class="neg-val">−0.02%</td>
+        <td class="neg-val">−2.57%</td>
+        <td class="pos-val best">+27.67%</td>
+      </tr>
+      <tr>
+        <td class="lh">연간 환산 수익률<sup>†</sup></td>
+        <td class="pos-val best">+1417.98%</td>
+        <td class="neg-val">−40.21%</td>
+        <td class="neg-val">−0.23%</td>
+        <td class="neg-val">−23.89%</td>
+        <td class="pos-val best">+1199.90%</td>
+      </tr>
+
+      <tr class="section-row"><td colspan="6">위험 지표</td></tr>
+      <tr>
+        <td class="lh">샤프 비율</td>
+        <td class="pos-val best">7.372</td>
+        <td class="neg-val">−6.358</td>
+        <td class="neg-val">−0.133</td>
+        <td class="neg-val">−1.637</td>
+        <td class="pos-val best">8.585</td>
+      </tr>
+      <tr>
+        <td class="lh">최대 낙폭 (MDD)</td>
+        <td class="pos-val best">−1.22%</td>
+        <td class="neg-val">−5.71%</td>
+        <td class="neg-val">−3.13%</td>
+        <td class="neg-val">−4.04%</td>
+        <td class="pos-val">−1.60%</td>
+      </tr>
+      <tr>
+        <td class="lh">연간 변동성</td>
+        <td>39.26%</td>
+        <td>8.84%</td>
+        <td>15.48%</td>
+        <td>18.23%</td>
+        <td>31.54%</td>
+      </tr>
+
+      <tr class="section-row"><td colspan="6">벤치마크 비교</td></tr>
+      <tr>
+        <td class="lh">Buy &amp; Hold 수익률</td>
+        <td class="pos-val best">+52.19%</td>
+        <td class="neg-val">−20.90%</td>
+        <td class="pos-val">+14.53%</td>
+        <td class="pos-val">+22.88%</td>
+        <td class="pos-val">+45.73%</td>
+      </tr>
+      <tr>
+        <td class="lh">초과 수익률 (vs. B&amp;H)</td>
+        <td class="neg-val">−22.62%</td>
+        <td class="pos-val best">+16.12%</td>
+        <td class="neg-val">−14.55%</td>
+        <td class="neg-val">−25.45%</td>
+        <td class="neg-val">−18.06%</td>
+      </tr>
+
+      <tr class="section-row"><td colspan="6">매매 활동</td></tr>
+      <tr>
+        <td class="lh">매수 횟수</td>
+        <td class="best">8</td>
+        <td>2</td>
+        <td>2</td>
+        <td>5</td>
+        <td>6</td>
+      </tr>
+      <tr>
+        <td class="lh">매도 횟수</td>
+        <td class="best">5</td>
+        <td>2</td>
+        <td>1</td>
+        <td class="best">5</td>
+        <td>3</td>
+      </tr>
+      <tr>
+        <td class="lh">홀드 횟수</td>
+        <td>11</td>
+        <td class="best">20</td>
+        <td class="best">21</td>
+        <td>14</td>
+        <td>15</td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <p class="footnote">
+    <strong>굵은 값</strong>은 해당 지표에서 최우수 결과를 나타냄.
+    <span style="color:#C0392B;font-weight:600;">빨간색</span>은 상승(수익),
+    <span style="color:#1A5EA8;font-weight:600;">파란색</span>은 하락(손실)을 의미함.<br>
+    <sup>†</sup> 연간 환산 수익률은 25거래일 기준 외삽(extrapolation)으로 산출되었으며, 단기 평가 기간의 특성상 해석에 주의가 필요함.
+    MDD는 평가 기간 내 고점 대비 최대 하락폭 기준으로 산출됨.
+  </p>
+
+</body>
+</html>
