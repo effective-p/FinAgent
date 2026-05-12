@@ -131,7 +131,13 @@ News is fetched from Google News RSS (`feedparser`) using the stock's Korean nam
 ## Running a Backtest
 
 ```bash
-python finagent/main.py --symbol AAPL --start 2024-01-01 --end 2024-06-30
+python finagent/main.py \
+  --symbol 005930 \
+  --stock-name 삼성전자 \
+  --start 2024-01-02 \
+  --end 2024-03-29 \
+  --initial-cash 10000000 \
+  --preference moderate
 ```
 
 ## Implementation Order
