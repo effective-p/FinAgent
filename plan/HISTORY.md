@@ -239,6 +239,38 @@ python regenerate_chart.py
 
 ---
 
+### FINAGENT_TEMPERATURE 환경변수 추가
+**파일:** `finagent/llm/client.py`, `.env`, `.env.example`
+
+**배경:**
+기존 코드에 temperature 설정이 없었음. OpenAI/Anthropic/Gemini 모두 미설정 시 기본값 **1.0**으로 동작하며, 이는 금융 판단에 부적합한 높은 창의성 수준. LG에너지솔루션 2026년 4월 백테스트를 CLI와 웹에서 각각 실행했을 때 결과가 아래와 같이 달라지는 문제가 실제로 발생:
+
+| 항목 | 웹 실행 (temperature=1.0) | CLI 실행 (temperature=1.0) |
+|------|--------------------------|---------------------------|
+| 총 수익률 | +11.51% | +15.53% |
+| Buy&Hold | +13.14% | +13.14% |
+| 초과 수익 | **-1.63%** (하회) | **+2.39%** (상회) |
+| MDD | -4.52% | -4.49% |
+| Sharpe | 3.006 | 4.303 |
+| 거래 패턴 | BUY 5, SELL 0, HOLD 17 | BUY 6, SELL 1, HOLD 15 |
+
+동일한 입력 데이터임에도 SELL 여부가 달라져 결과가 역전됨. 논문 재현 및 실험 비교를 위해 재현성 확보가 필수.
+
+**변경 내용:**
+- `LLMClient.__init__()`에서 `FINAGENT_TEMPERATURE` 환경변수 읽기 (기본값 `0`)
+- `chat()`, `chat_with_image()` 호출 시 `temperature=self.temperature` 전달 (3개 provider 모두)
+- `.env`에 `FINAGENT_TEMPERATURE=0` 추가
+- `.env.example`에 설명 주석 추가
+
+**`.env` 설정 가이드:**
+```
+FINAGENT_TEMPERATURE=0    # 결정적 출력, 매 실행 동일 결과 (권장)
+FINAGENT_TEMPERATURE=0.7  # 적당한 다양성 허용
+FINAGENT_TEMPERATURE=1.0  # 각 provider 원래 기본값 (재현성 없음)
+```
+
+---
+
 ## 전체 변경 요약표
 
 > 💡 **제거 가능 여부**: ✅ 제거 가능 (되돌리기 용이) / ⚠️ 조건부 (다른 코드 의존) / ❌ 필수 (제거 시 기능/결과 손상)
@@ -262,3 +294,4 @@ python regenerate_chart.py
 | 15 | 🛠 UX | `.env` 지원 | `main.py`, `run_web.py`, `.env.example` | — | ✅ |
 | 16 | 🛠 UX | 멀티 LLM 추상화 레이어 | `finagent/llm/`, 4개 모듈 | — | ✅ |
 | 17 | 🛠 UX | 성과 차트 재생성 유틸리티 | `regenerate_chart.py` | — | ✅ |
+| 18 | 🛠 UX | FINAGENT_TEMPERATURE 추가 (기본값 0) | `llm/client.py`, `.env.example` | §5.1 재현성 | ❌ |
