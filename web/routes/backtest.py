@@ -54,8 +54,15 @@ def _make_progress_callback(job: BacktestJob, loop: asyncio.AbstractEventLoop):
 @router.post("/api/backtest", response_model=JobCreatedResponse)
 async def start_backtest(req: BacktestRequest):
     """백테스트 Job을 생성하고 즉시 job_id를 반환한다. 실제 실행은 백그라운드."""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
+    provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    key_map = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+    }
+    required_key = key_map.get(provider, "OPENAI_API_KEY")
+    if not os.environ.get(required_key):
+        raise HTTPException(status_code=400, detail=f"{required_key} 환경변수가 설정되지 않았습니다.")
 
     job = create_job()
     job_dir = f"job_data/{job.job_id}"
