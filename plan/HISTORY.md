@@ -202,19 +202,6 @@ git push 권한 없음 — 로컬에서만 관리. 커밋 시 이 파일 참고.
 
 ---
 
-### 뉴스 검색 쿼리에 "주가" 키워드 추가
-**파일:** `finagent/data/fetcher.py`
-
-**논문 근거 (§4.2 Market Intelligence):**
-> *"latest news articles related to the target stock"*
-
-**한국 시장 적용 이유:** 한국 Google News에서 종목명만으로 검색 시 관련 없는 기사(동명이인, 일반 기업 뉴스 등) 혼입. "주가" 키워드 추가로 금융 뉴스 정확도 향상 → MI 입력 품질을 논문 수준으로 확보.
-
-**변경 전:** `query = quote(f"{stock_name}")`  
-**변경 후:** `query = quote(f"{stock_name} 주가")`
-
----
-
 ## 🛠 UX — 프로그램 사용 편의 (논문 검증 결과에 영향 없음)
 
 ### `.env` 파일을 통한 API 키 설정 지원
@@ -272,7 +259,6 @@ python regenerate_chart.py
 | 12 | 🇰🇷 KR-ADAPT | Expert Guidance → PER/PBR 대체 | `fetcher.py`, `decision_making.py`, `main.py` | §4.4 (expert knowledge) | ✅ |
 | 13 | 🇰🇷 KR-ADAPT | 볼린저 밴드(BB) 추가 | `technical_indicators.py`, `schemas.py` | §4.5 (tool augmentation 보강) | ✅ |
 | 14 | 🇰🇷 KR-ADAPT | KRX 1주 단위 정수 거래 | `portfolio.py` | §5.1 (position sizing) | ⚠️ |
-| 15 | 🇰🇷 KR-ADAPT | 뉴스 쿼리 "주가" 키워드 | `fetcher.py` | §4.2 (관련 뉴스 품질) | ✅ |
-| 16 | 🛠 UX | `.env` 지원 | `main.py`, `run_web.py`, `.env.example` | — | ✅ |
-| 17 | 🛠 UX | 멀티 LLM 추상화 레이어 | `finagent/llm/`, 4개 모듈 | — | ✅ |
-| 18 | 🛠 UX | 성과 차트 재생성 유틸리티 | `regenerate_chart.py` | — | ✅ |
+| 15 | 🛠 UX | `.env` 지원 | `main.py`, `run_web.py`, `.env.example` | — | ✅ |
+| 16 | 🛠 UX | 멀티 LLM 추상화 레이어 | `finagent/llm/`, 4개 모듈 | — | ✅ |
+| 17 | 🛠 UX | 성과 차트 재생성 유틸리티 | `regenerate_chart.py` | — | ✅ |

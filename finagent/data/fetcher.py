@@ -71,7 +71,7 @@ class DataFetcher:
             target_date: 기준일. ±7일 이내 뉴스만 반환
             max_items: 최대 반환 개수
         """
-        query = quote(f"{stock_name} 주가")
+        query = quote(f"{stock_name}")
         url = f"https://news.google.com/rss/search?hl=ko&gl=KR&ie=UTF-8&q={query}"
 
         try:
