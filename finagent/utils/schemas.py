@@ -17,6 +17,7 @@ class TechnicalSignals(BaseModel):
     macd_signal: str      # "BUY" | "SELL" | "HOLD"
     kdj_rsi_signal: str
     zmr_signal: str
+    bb_signal: str        # Bollinger Bands
     signal_text: str      # LLM 프롬프트에 주입할 최종 텍스트
 
 
@@ -58,5 +59,6 @@ class HLRResult(BaseModel):
 
 
 class Decision(BaseModel):
-    action: str      # "BUY" | "SELL" | "HOLD"
-    reasoning: str   # 결정 근거
+    action: str       # "BUY" | "SELL" | "HOLD"
+    reasoning: str    # 결정 근거
+    analysis: str = ""  # 단계별 분석 (논문 output format)

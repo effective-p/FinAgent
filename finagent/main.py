@@ -15,6 +15,9 @@ import sys
 from datetime import date
 
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from finagent.data.fetcher import DataFetcher
 from finagent.memory.store import MemoryStore
@@ -75,6 +78,8 @@ def run_day(
     # 1. 데이터 수집
     _step("news_fetch")
     news = fetcher.get_news(symbol, stock_name, target_date)
+    investor_data = fetcher.get_investor_trading(symbol, target_date)
+    fundamental_guidance = fetcher.get_fundamental_guidance(symbol, target_date)
     kline_path = fetcher.plot_kline_chart(df, target_date, symbol)
     trading_path = fetcher.plot_trading_chart(
         df, portfolio.recent_actions(14), target_date, symbol,
@@ -82,7 +87,7 @@ def run_day(
 
     # 2. Market Intelligence
     _step("market_intelligence")
-    mi_result = mi_module.run(symbol, target_date, df, news)
+    mi_result = mi_module.run(symbol, target_date, df, news, investor_data=investor_data)
 
     # 3. Low-Level Reflection
     _step("low_level_reflection")
@@ -102,6 +107,7 @@ def run_day(
         symbol, target_date, df,
         mi_result, llr_result, hlr_result,
         portfolio_state, trader_preference,
+        fundamental_guidance=fundamental_guidance,
     )
 
     # 6. 거래 실행
@@ -144,7 +150,8 @@ def run_backtest(
     """
     fetcher = DataFetcher(chart_dir=chart_dir)
     memory = MemoryStore(persist_dir=memory_dir)
-    portfolio = Portfolio(symbol=symbol, initial_cash=initial_cash, db_path=db_path)
+    # reset=True: 동일 종목 재실행 시 이전 포지션/거래 내역을 초기화
+    portfolio = Portfolio(symbol=symbol, initial_cash=initial_cash, db_path=db_path, reset=True)
 
     mi_module = MarketIntelligenceModule(memory=memory)
     llr_module = LowLevelReflectionModule(memory=memory)
@@ -152,7 +159,8 @@ def run_backtest(
     dm_module = DecisionMakingModule(memory=memory)
 
     # 전체 기간 + 충분한 lookback 한 번에 수집
-    lookback_days = (end - start).days + 90
+    # today 기준으로 backtest start까지의 거리를 계산해야 과거 데이터를 커버함
+    lookback_days = (date.today() - start).days + 90
     logger.info("Fetching price data for %s (lookback=%d days)…", symbol, lookback_days)
     if step_callback:
         try:
@@ -250,6 +258,8 @@ def _print_summary(
     print(f"  총 수익률:          {perf.get('total_return_pct', 0):>+15.2f}%")
     print(f"  연간 환산 수익률:   {perf.get('annualized_return_pct', 0):>+15.2f}%")
     print(f"  Sharpe Ratio:       {perf.get('sharpe_ratio', 0):>16.3f}")
+    print(f"  Calmar Ratio:       {perf.get('calmar_ratio', 0):>16.3f}")
+    print(f"  Sortino Ratio:      {perf.get('sortino_ratio', 0):>16.3f}")
     print(f"  최대 낙폭 (MDD):   {perf.get('max_drawdown_pct', 0):>+15.2f}%")
     print(f"  연간 변동성:        {perf.get('volatility_annual_pct', 0):>15.2f}%")
     print("-" * W)

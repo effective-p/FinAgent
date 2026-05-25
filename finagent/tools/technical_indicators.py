@@ -25,13 +25,15 @@ def get_technical_signals(df: pd.DataFrame) -> TechnicalSignals:
     macd_signal, macd_detail = _calc_macd(df)
     kdj_rsi_signal, kdj_rsi_detail = _calc_kdj_rsi(df)
     zmr_signal, zmr_detail = _calc_zmr(df)
+    bb_signal, bb_detail = _calc_bb(df)
 
-    signal_text = "\n".join([macd_detail, kdj_rsi_detail, zmr_detail])
+    signal_text = "\n".join([macd_detail, kdj_rsi_detail, zmr_detail, bb_detail])
 
     return TechnicalSignals(
         macd_signal=macd_signal,
         kdj_rsi_signal=kdj_rsi_signal,
         zmr_signal=zmr_signal,
+        bb_signal=bb_signal,
         signal_text=signal_text,
     )
 
@@ -140,5 +142,43 @@ def _calc_zmr(df: pd.DataFrame, window: int = 20) -> tuple[str, str]:
     else:
         signal = "HOLD"
         detail = f"ZMR: HOLD (z-score={z}, within normal range)"
+
+    return signal, detail
+
+
+# ------------------------------------------------------------------
+# Bollinger Bands (20, 2)
+# ------------------------------------------------------------------
+
+def _calc_bb(df: pd.DataFrame, window: int = 20, std_dev: float = 2.0) -> tuple[str, str]:
+    """볼린저 밴드 상단/하단 이탈 감지."""
+    bb = ta.bbands(df["close"], length=window, std=std_dev)
+    if bb is None or bb.empty:
+        return "HOLD", "BB: HOLD (insufficient data)"
+
+    lower_col = [c for c in bb.columns if c.startswith("BBL")]
+    upper_col = [c for c in bb.columns if c.startswith("BBU")]
+
+    if not lower_col or not upper_col:
+        return "HOLD", "BB: HOLD (column parse error)"
+
+    lower = bb[lower_col[0]].iloc[-1]
+    upper = bb[upper_col[0]].iloc[-1]
+    close = df["close"].iloc[-1]
+
+    if pd.isna(lower) or pd.isna(upper) or upper <= lower:
+        return "HOLD", "BB: HOLD (insufficient data)"
+
+    bb_pct = round((close - lower) / (upper - lower) * 100, 1)
+
+    if close <= lower:
+        signal = "BUY"
+        detail = f"BB: BUY signal (하단밴드 이탈, %B={bb_pct})"
+    elif close >= upper:
+        signal = "SELL"
+        detail = f"BB: SELL signal (상단밴드 이탈, %B={bb_pct})"
+    else:
+        signal = "HOLD"
+        detail = f"BB: HOLD (%B={bb_pct}, 밴드 내)"
 
     return signal, detail

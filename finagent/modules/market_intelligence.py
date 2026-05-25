@@ -4,16 +4,14 @@ import logging
 from datetime import date
 from typing import List
 
-import anthropic
 import pandas as pd
 
+from finagent.llm.client import LLMClient
 from finagent.memory.store import MemoryStore
 from finagent.utils.schemas import MIResult, NewsItem
 from finagent.utils.xml_parser import parse_output
 
 logger = logging.getLogger(__name__)
-
-_MODEL = "claude-sonnet-4-6"
 
 _ANALYZE_PROMPT = """\
 당신은 전문 주식 시장 분석가입니다. 아래 데이터를 바탕으로 종목의 현재 시장 상황을 분석하세요.
@@ -29,6 +27,9 @@ _ANALYZE_PROMPT = """\
 
 [최근 가격 데이터 (최근 10거래일)]
 {price_text}
+
+[투자자 동향]
+{investor_data}
 
 다음 XML 형식으로만 응답하세요. 설명이나 추가 텍스트는 절대 포함하지 마세요.
 
@@ -46,11 +47,9 @@ class MarketIntelligenceModule:
     def __init__(
         self,
         memory: MemoryStore,
-        model: str = _MODEL,
     ) -> None:
         self.memory = memory
-        self.model = model
-        self._client = anthropic.Anthropic()
+        self._llm = LLMClient()
 
     def run(
         self,
@@ -58,9 +57,12 @@ class MarketIntelligenceModule:
         target_date: date,
         price_df: pd.DataFrame,
         news_list: List[NewsItem],
+        investor_data: str = "",
     ) -> MIResult:
         # 1. 최신 뉴스+가격 분석
-        latest_summary, queries = self._analyze_latest(symbol, target_date, price_df, news_list)
+        latest_summary, queries = self._analyze_latest(
+            symbol, target_date, price_df, news_list, investor_data
+        )
 
         # 2. Diversified Retrieval — 과거 MI 3가지 관점으로 검색
         past_docs = self.memory.diversified_retrieve(
@@ -108,6 +110,7 @@ class MarketIntelligenceModule:
         target_date: date,
         price_df: pd.DataFrame,
         news_list: List[NewsItem],
+        investor_data: str = "",
     ) -> tuple[str, dict[str, str]]:
         news_text = _format_news(news_list)
         price_text = _format_price(price_df)
@@ -117,14 +120,13 @@ class MarketIntelligenceModule:
             target_date=target_date.isoformat(),
             news_text=news_text,
             price_text=price_text,
+            investor_data=investor_data or "투자자 동향 데이터 없음",
         )
 
-        response = self._client.messages.create(
-            model=self.model,
+        raw = self._llm.chat(
+            [{"role": "user", "content": prompt}],
             max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
         )
-        raw = response.content[0].text
         logger.debug("MI raw response: %s", raw[:200])
 
         fields = parse_output(raw, "summary", "short_term_query", "medium_term_query", "long_term_query")

@@ -5,15 +5,12 @@ import logging
 from datetime import date
 from typing import List
 
-import anthropic
-
+from finagent.llm.client import LLMClient
 from finagent.memory.store import MemoryStore
 from finagent.utils.schemas import HLRResult, LLRResult, MIResult, TradeAction
 from finagent.utils.xml_parser import parse_output
 
 logger = logging.getLogger(__name__)
-
-_MODEL = "claude-sonnet-4-6"
 
 _ANALYZE_PROMPT = """\
 당신은 전문 퀀트 트레이더입니다.
@@ -32,7 +29,10 @@ _ANALYZE_PROMPT = """\
 [Market Intelligence 요약]
 {mi_latest}
 
-[Low-Level Reflection 요약]
+[과거 Low-Level Reflection 참고]
+{past_llr_text}
+
+[최신 Low-Level Reflection]
 단기: {llr_short}
 중기: {llr_medium}
 장기: {llr_long}
@@ -57,11 +57,9 @@ class HighLevelReflectionModule:
     def __init__(
         self,
         memory: MemoryStore,
-        model: str = _MODEL,
     ) -> None:
         self.memory = memory
-        self.model = model
-        self._client = anthropic.Anthropic()
+        self._llm = LLMClient()
 
     def run(
         self,
@@ -72,15 +70,23 @@ class HighLevelReflectionModule:
         mi_result: MIResult,
         llr_result: LLRResult,
     ) -> HLRResult:
-        # 1. 과거 HLR 검색 (LLR 쿼리 활용)
-        past_docs = self.memory.retrieve(
+        # 1. 과거 LLR 검색 (LLR 쿼리 활용) — 논문 §4.3 workflow step 6
+        past_llr_docs = self.memory.retrieve(
+            "low_level_reflection",
+            llr_result.query,
+            top_k=3,
+        )
+        past_llr_text = _format_past_docs(past_llr_docs, label="과거 Low-Level Reflection")
+
+        # 2. 과거 HLR 검색 (LLR 쿼리 활용)
+        past_hlr_docs = self.memory.retrieve(
             "high_level_reflection",
             llr_result.query,
             top_k=3,
         )
-        past_hlr_text = _format_past_docs(past_docs)
+        past_hlr_text = _format_past_docs(past_hlr_docs, label="과거 High-Level Reflection")
 
-        # 2. Claude Vision 분석
+        # 3. Claude Vision 분석
         result = self._analyze(
             symbol=symbol,
             target_date=target_date,
@@ -88,10 +94,11 @@ class HighLevelReflectionModule:
             past_actions=past_actions,
             mi_result=mi_result,
             llr_result=llr_result,
+            past_llr_text=past_llr_text,
             past_hlr_text=past_hlr_text,
         )
 
-        # 3. 메모리 저장 (summary를 문서 본문으로)
+        # 4. 메모리 저장 (summary를 문서 본문으로)
         self.memory.add(
             "high_level_reflection",
             result.summary,
@@ -99,8 +106,8 @@ class HighLevelReflectionModule:
         )
 
         logger.info(
-            "HLR run complete for %s on %s | actions=%d past_docs=%d",
-            symbol, target_date, len(past_actions), len(past_docs),
+            "HLR run complete for %s on %s | actions=%d past_llr=%d past_hlr=%d",
+            symbol, target_date, len(past_actions), len(past_llr_docs), len(past_hlr_docs),
         )
         return result
 
@@ -116,6 +123,7 @@ class HighLevelReflectionModule:
         past_actions: List[TradeAction],
         mi_result: MIResult,
         llr_result: LLRResult,
+        past_llr_text: str,
         past_hlr_text: str,
     ) -> HLRResult:
         with open(trading_chart_path, "rb") as f:
@@ -129,34 +137,14 @@ class HighLevelReflectionModule:
             n_actions=len(past_actions),
             actions_text=actions_text,
             mi_latest=mi_result.latest_summary,
+            past_llr_text=past_llr_text,
             llr_short=llr_result.short_term_reasoning,
             llr_medium=llr_result.medium_term_reasoning,
             llr_long=llr_result.long_term_reasoning,
             past_hlr_text=past_hlr_text,
         )
 
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=2048,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": image_data,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        )
-
-        raw = response.content[0].text
+        raw = self._llm.chat_with_image(prompt, image_data, max_tokens=2048)
         logger.debug("HLR raw response: %s", raw[:200])
 
         fields = parse_output(raw, "reasoning", "improvement", "summary", "query")
@@ -185,10 +173,10 @@ def _format_actions(actions: List[TradeAction]) -> str:
     return "\n".join(lines)
 
 
-def _format_past_docs(docs: List[str]) -> str:
+def _format_past_docs(docs: List[str], label: str = "과거 반성") -> str:
     if not docs:
-        return "과거 High-Level Reflection 기록 없음"
-    lines = ["[과거 반성 참고]"]
+        return f"{label} 기록 없음"
+    lines = [f"[{label} 참고]"]
     for i, doc in enumerate(docs, 1):
         lines.append(f"{i}. {doc}")
     return "\n".join(lines)

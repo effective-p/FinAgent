@@ -5,16 +5,14 @@ import logging
 from datetime import date
 from typing import Dict, List, Optional
 
-import anthropic
 import pandas as pd
 
+from finagent.llm.client import LLMClient
 from finagent.memory.store import MemoryStore
 from finagent.utils.schemas import LLRResult, MIResult
 from finagent.utils.xml_parser import parse_output
 
 logger = logging.getLogger(__name__)
-
-_MODEL = "claude-sonnet-4-6"
 
 _ANALYZE_PROMPT = """\
 당신은 전문 주식 차트 분석가입니다.
@@ -52,11 +50,9 @@ class LowLevelReflectionModule:
     def __init__(
         self,
         memory: MemoryStore,
-        model: str = _MODEL,
     ) -> None:
         self.memory = memory
-        self.model = model
-        self._client = anthropic.Anthropic()
+        self._llm = LLMClient()
 
     def run(
         self,
@@ -70,11 +66,11 @@ class LowLevelReflectionModule:
         price_changes = _calc_price_changes(price_df, target_date)
         price_changes_text = _format_price_changes(price_changes)
 
-        # 2. 과거 LLR 검색 (MI 단기 쿼리 활용)
-        past_docs = self.memory.retrieve(
+        # 2. 과거 LLR 검색 — MI 3개 쿼리로 diversified retrieval (논문 §4.1)
+        past_docs = self.memory.diversified_retrieve(
             "low_level_reflection",
-            mi_result.short_term_query,
-            top_k=3,
+            [mi_result.short_term_query, mi_result.medium_term_query, mi_result.long_term_query],
+            top_k_each=2,
         )
         past_llr_text = _format_past_docs(past_docs)
 
@@ -130,28 +126,7 @@ class LowLevelReflectionModule:
             past_llr_text=past_llr_text,
         )
 
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=2048,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": image_data,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        )
-
-        raw = response.content[0].text
+        raw = self._llm.chat_with_image(prompt, image_data, max_tokens=2048)
         logger.debug("LLR raw response: %s", raw[:200])
 
         fields = parse_output(

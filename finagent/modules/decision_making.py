@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-import anthropic
 import pandas as pd
 
+from finagent.llm.client import LLMClient
 from finagent.memory.store import MemoryStore
 from finagent.tools.technical_indicators import get_technical_signals
 from finagent.utils.schemas import (
@@ -18,8 +18,6 @@ from finagent.utils.schemas import (
 from finagent.utils.xml_parser import parse_output
 
 logger = logging.getLogger(__name__)
-
-_MODEL = "claude-sonnet-4-6"
 
 _PREFERENCE_TEXT = {
     "aggressive":    "공격적 (수익 극대화 우선, 높은 리스크 허용)",
@@ -59,13 +57,22 @@ _DECIDE_PROMPT = """\
 평가: {hlr_reasoning}
 개선점: {hlr_improvement}
 
+[전문가 가이던스 — PER/PBR/배당 기반 투자 신호]
+{fundamental_guidance}
+
 위 분석을 종합하여 오늘의 거래 결정을 내리세요.
+
+[중요 제약 조건]
+- 현금이 현재 주가보다 적으면 BUY 불가
+- 보유 수량이 0이면 SELL 불가
+
 action은 반드시 BUY, SELL, HOLD 중 하나여야 합니다.
 다른 텍스트 없이 아래 XML 형식으로만 응답하세요.
 
 <output>
+  <analysis>각 데이터(MI/LLR/HLR/기술지표)가 결정에 미치는 영향 단계별 분석 (한국어, 3-5문장)</analysis>
   <action>BUY 또는 SELL 또는 HOLD</action>
-  <reasoning>결정 근거 (한국어, 2-4문장)</reasoning>
+  <reasoning>최종 결정 근거 요약 (한국어, 2-3문장)</reasoning>
 </output>"""
 
 
@@ -75,11 +82,9 @@ class DecisionMakingModule:
     def __init__(
         self,
         memory: MemoryStore,
-        model: str = _MODEL,
     ) -> None:
         self.memory = memory
-        self.model = model
-        self._client = anthropic.Anthropic()
+        self._llm = LLMClient()
 
     def run(
         self,
@@ -91,11 +96,9 @@ class DecisionMakingModule:
         hlr_result: HLRResult,
         portfolio_state: PortfolioState,
         trader_preference: str = "moderate",
+        fundamental_guidance: str = "",
     ) -> Decision:
-        # 기술적 지표 계산
         tech_signals = get_technical_signals(price_df)
-
-        # 프롬프트 구성 및 Claude 호출
         decision = self._decide(
             symbol=symbol,
             target_date=target_date,
@@ -105,6 +108,7 @@ class DecisionMakingModule:
             hlr_result=hlr_result,
             portfolio_state=portfolio_state,
             trader_preference=trader_preference,
+            fundamental_guidance=fundamental_guidance,
         )
 
         logger.info(
@@ -127,6 +131,7 @@ class DecisionMakingModule:
         hlr_result: HLRResult,
         portfolio_state: PortfolioState,
         trader_preference: str,
+        fundamental_guidance: str = "",
     ) -> Decision:
         preference_text = _PREFERENCE_TEXT.get(trader_preference, _PREFERENCE_TEXT["moderate"])
 
@@ -145,17 +150,16 @@ class DecisionMakingModule:
             llr_long=llr_result.long_term_reasoning,
             hlr_reasoning=hlr_result.reasoning,
             hlr_improvement=hlr_result.improvement,
+            fundamental_guidance=fundamental_guidance or "기본 투자지표 데이터 없음",
         )
 
-        response = self._client.messages.create(
-            model=self.model,
+        raw = self._llm.chat(
+            [{"role": "user", "content": prompt}],
             max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
         )
-        raw = response.content[0].text
         logger.debug("DM raw response: %s", raw[:200])
 
-        fields = parse_output(raw, "action", "reasoning")
+        fields = parse_output(raw, "analysis", "action", "reasoning")
         action = fields["action"].strip().upper()
         if action not in ("BUY", "SELL", "HOLD"):
             logger.warning("Unexpected action '%s', defaulting to HOLD", action)
@@ -164,4 +168,5 @@ class DecisionMakingModule:
         return Decision(
             action=action,
             reasoning=fields["reasoning"] or raw,
+            analysis=fields["analysis"] or "",
         )

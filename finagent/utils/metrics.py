@@ -24,6 +24,9 @@ TRADING_DAYS_PER_YEAR = 252
 # Equity curve
 # ---------------------------------------------------------------------------
 
+_TRANSACTION_COST_RATE = 0.001  # 논문 §5.1: 0.1% per trade
+
+
 def compute_equity_curve(
     trades: List[TradeAction],
     price_df: pd.DataFrame,
@@ -33,6 +36,7 @@ def compute_equity_curve(
     """Trade 히스토리를 재현하여 일별 총 자산가치 시리즈를 반환한다.
 
     index: date, values: 총 포트폴리오 가치(현금 + 포지션 평가액)
+    수수료(0.1%)는 Portfolio.execute()와 동일하게 적용한다.
     """
     sorted_trades = sorted(trades, key=lambda t: t.date)
     cash = initial_cash
@@ -46,13 +50,13 @@ def compute_equity_curve(
 
         while trade_idx < len(sorted_trades) and sorted_trades[trade_idx].date <= day:
             t = sorted_trades[trade_idx]
-            if t.action == "BUY":
-                spent = cash * buy_ratio
-                if spent > 0:
-                    position += spent / t.price
-                    cash -= spent
-            elif t.action == "SELL":
-                cash += position * t.price
+            if t.action == "BUY" and t.quantity > 0:
+                fee = t.quantity * t.price * _TRANSACTION_COST_RATE
+                position += t.quantity
+                cash -= t.quantity * t.price + fee
+            elif t.action == "SELL" and t.quantity > 0:
+                fee = t.quantity * t.price * _TRANSACTION_COST_RATE
+                cash += t.quantity * t.price - fee
                 position = 0.0
             trade_idx += 1
 
@@ -117,10 +121,26 @@ def compute_performance(
     drawdown = (equity_curve - rolling_max) / rolling_max
     max_drawdown_pct = float(drawdown.min() * 100)
 
+    # Calmar Ratio: 연간수익률 / |MDD|  (논문 §5.2)
+    calmar = (
+        float(annualized_return_pct / abs(max_drawdown_pct))
+        if max_drawdown_pct != 0 else 0.0
+    )
+
+    # Sortino Ratio: 연간수익률 / 하방표준편차  (논문 §5.2)
+    negative_returns = daily_returns[daily_returns < rf_daily]
+    downside_std = float(negative_returns.std() * math.sqrt(TRADING_DAYS_PER_YEAR) * 100)
+    sortino = (
+        float(annualized_return_pct / downside_std)
+        if downside_std > 0 else 0.0
+    )
+
     return {
         "total_return_pct": round(total_return_pct, 2),
         "annualized_return_pct": round(annualized_return_pct, 2),
         "sharpe_ratio": round(sharpe, 3),
+        "calmar_ratio": round(calmar, 3),
+        "sortino_ratio": round(sortino, 3),
         "max_drawdown_pct": round(max_drawdown_pct, 2),
         "volatility_annual_pct": round(volatility_annual, 2),
         "final_value": round(final_value, 2),
@@ -140,14 +160,13 @@ def plot_performance(
 ) -> str:
     """FinAgent 자산곡선 vs Buy&Hold + Drawdown 차트를 PNG로 저장한다."""
 
-    # macOS 한글 폰트 설정 (없으면 기본 폰트 유지)
-    for _font in ["Pretendard"]:
-        try:
+    # 한글 폰트 설정: Windows → macOS → Linux 순으로 시도
+    import matplotlib.font_manager as fm
+    _available = {f.name for f in fm.fontManager.ttflist}
+    for _font in ["Malgun Gothic", "Apple SD Gothic Neo", "NanumGothic", "DejaVu Sans"]:
+        if _font in _available:
             plt.rcParams["font.family"] = _font
             break
-        except Exception:
-            logger.info("Font setting error")
-            continue
 
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(14, 8),
