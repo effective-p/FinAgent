@@ -1,11 +1,12 @@
 """LLM 클라이언트 추상화 — OpenAI / Anthropic / Gemini 통합 인터페이스.
 
 .env 설정:
-    LLM_PROVIDER=openai      # openai | anthropic | gemini
+    LLM_PROVIDER=openai          # openai | anthropic | gemini
     OPENAI_API_KEY=sk-proj-...
     ANTHROPIC_API_KEY=sk-ant-...
     GEMINI_API_KEY=AIza...
     FINAGENT_MODEL=gpt-4o-mini   # 선택: 기본값은 provider별 기본 모델
+    FINAGENT_TEMPERATURE=0       # 선택: 기본값 0 (재현성 확보)
 """
 from __future__ import annotations
 
@@ -42,8 +43,9 @@ class LLMClient:
                 f"지원: {list(_DEFAULTS.keys())}"
             )
         self.model = os.getenv("FINAGENT_MODEL", _DEFAULTS[self.provider])
+        self.temperature = float(os.getenv("FINAGENT_TEMPERATURE", "0"))
         self._client = self._build_client()
-        logger.info("LLMClient: provider=%s model=%s", self.provider, self.model)
+        logger.info("LLMClient: provider=%s model=%s temperature=%s", self.provider, self.model, self.temperature)
 
     def _build_client(self):
         if self.provider == "openai":
@@ -67,6 +69,7 @@ class LLMClient:
             resp = self._client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,
+                temperature=self.temperature,
                 messages=messages,
             )
             return resp.content[0].text
@@ -74,6 +77,7 @@ class LLMClient:
         resp = self._client.chat.completions.create(
             model=self.model,
             max_tokens=max_tokens,
+            temperature=self.temperature,
             messages=messages,
         )
         return resp.choices[0].message.content
@@ -103,6 +107,7 @@ class LLMClient:
             resp = self._client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,
+                temperature=self.temperature,
                 messages=messages,
             )
             return resp.content[0].text
@@ -121,6 +126,7 @@ class LLMClient:
         resp = self._client.chat.completions.create(
             model=self.model,
             max_tokens=max_tokens,
+            temperature=self.temperature,
             messages=messages,
         )
         return resp.choices[0].message.content
