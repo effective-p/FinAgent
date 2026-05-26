@@ -29,12 +29,12 @@ DataFetcher → MarketIntelligence → LowLevelReflection → HighLevelReflectio
 
 | Module | Role |
 |------|------|
-| `DataFetcher` | pykrx price data, Google News RSS, mplfinance chart generation |
+| `DataFetcher` | pykrx price data, Google News RSS, mplfinance chart generation, investor trading (외국인/기관 순매수), fundamental data (PER/PBR/배당) |
 | `MemoryStore` | ChromaDB 3-collection (MI / LLR / HLR), Diversified Retrieval |
-| `MarketIntelligenceModule` | Claude analysis of latest news+prices, short/medium/long-term query generation |
+| `MarketIntelligenceModule` | LLM analysis of latest news+prices+investor trading, short/medium/long-term query generation |
 | `LowLevelReflectionModule` | Kline chart Vision + price change analysis → short/medium/long-term cause analysis |
 | `HighLevelReflectionModule` | Trading chart Vision + past actions → decision evaluation & improvement |
-| `DecisionMakingModule` | Comprehensive analysis + technical indicators (MACD/KDJ/ZMR) → BUY/SELL/HOLD |
+| `DecisionMakingModule` | Comprehensive analysis + technical indicators (MACD/KDJ/RSI/ZMR/BB) + fundamental guidance (PER/PBR/배당) → BUY/SELL/HOLD |
 | `Portfolio` | SQLite trade history, position/cash management |
 | `metrics` | Equity curve, Sharpe ratio, MDD, Buy&Hold benchmark |
 
@@ -61,9 +61,32 @@ pip install -r requirements.txt
 
 ### Environment Variables
 
+Copy `.env.example` to `.env` and fill in the values:
+
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+# LLM Provider — choose one: anthropic (default) / openai / gemini
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...   # required if LLM_PROVIDER=anthropic
+OPENAI_API_KEY=sk-...          # required if LLM_PROVIDER=openai
+GEMINI_API_KEY=...             # required if LLM_PROVIDER=gemini
+
+# KRX Data Portal — optional, free sign-up at data.krx.co.kr
+# KRX_ID=your_id
+# KRX_PW=your_password
+
+# Temperature — 0 for reproducibility (recommended), 1.0 for each provider's default
+FINAGENT_TEMPERATURE=0
 ```
+
+| Provider | Default model | Vision support |
+|----------|--------------|---------------|
+| `anthropic` | `claude-sonnet-4-6` | Yes |
+| `openai` | `gpt-4o-mini` | Yes |
+| `gemini` | `gemini-2.0-flash` | Yes |
+
+> **KRX Data Portal** (`KRX_ID` / `KRX_PW`): enables investor trading (외국인/기관 순매수) and fundamental data (PER/PBR/배당) injection. Free sign-up at [data.krx.co.kr](https://data.krx.co.kr). Without these credentials, FinAgent falls back to OHLCV + news only.
+
+> **Reproducibility**: `FINAGENT_TEMPERATURE=0` ensures identical results across runs. At `1.0` (provider default), the same inputs can produce different BUY/SELL/HOLD decisions.
 
 ---
 
@@ -126,8 +149,7 @@ python finagent/main.py \
 Handles everything in the browser, from backtest parameter input to real-time progress monitoring and result visualization.
 
 ```bash
-# Start server
-export ANTHROPIC_API_KEY=sk-ant-...
+# Start server (configure API keys in .env first)
 python run_web.py
 ```
 
@@ -172,28 +194,31 @@ The following 6 steps run in order for each trading day.
 │                                                                     │
 │  1. Data Collection                                                 │
 │     ├─ pykrx          → price_df (OHLCV, look-ahead blocked)        │
-│     ├─ Google RSS     → news_list (±7 day filter)                   │
+│     ├─ Google RSS     → news_list (past 7 days only)                │
+│     ├─ pykrx          → investor_trading (외국인/기관/개인 순매수)       │
+│     ├─ pykrx          → fundamental_guidance (PER/PBR/배당, ±15% signal) │
 │     ├─ mplfinance     → kline_chart.png   (for LLR)                 │
 │     └─ mplfinance     → trading_chart.png (for HLR, BUY▲/SELL▽ markers) │
 │                                                                     │
-│  2. Market Intelligence (Claude API)                                │
-│     ├─ Input: news_list + price_df                                  │
+│  2. Market Intelligence (LLM API)                                   │
+│     ├─ Input: news_list + price_df + investor_trading               │
 │     ├─ Output: summary + short/medium/long_term_query               │
 │     ├─ Diversified Retrieval: 3 queries → up to 6 past MI records   │
 │     └─ Store: memory["market_intelligence"]                         │
 │                                                                     │
-│  3. Low-Level Reflection (Claude Vision)                            │
+│  3. Low-Level Reflection (LLM Vision)                               │
 │     ├─ Input: kline_chart.png + price change rates (1d/5d/10d/20d) + MI summary │
 │     ├─ Output: short/medium/long-term price movement cause analysis + query │
 │     └─ Store: memory["low_level_reflection"]                        │
 │                                                                     │
-│  4. High-Level Reflection (Claude Vision)                           │
+│  4. High-Level Reflection (LLM Vision)                              │
 │     ├─ Input: trading_chart.png + recent 14 trade history + MI + LLR │
 │     ├─ Output: decision evaluation + improvement plan + summary + query │
 │     └─ Store: memory["high_level_reflection"]                       │
 │                                                                     │
-│  5. Decision Making (Claude API)                                    │
-│     ├─ Input: MI + LLR + HLR + technical indicators (MACD/KDJ/ZMR) + portfolio │
+│  5. Decision Making (LLM API)                                       │
+│     ├─ Input: MI + LLR + HLR + technical indicators (MACD/KDJ/RSI/ZMR/BB) │
+│     │          + fundamental_guidance (PER/PBR/배당) + portfolio     │
 │     └─ Output: BUY / SELL / HOLD + reasoning                       │
 │                                                                     │
 │  6. Trade Execution                                                 │
@@ -291,9 +316,10 @@ price_df
 get_technical_signals(df)
     ├─ MACD (12/26/9)   → golden/dead cross detection → "BUY signal (golden cross, MACD=0.12)"
     ├─ KDJ + RSI        → overbought/oversold detection → "SELL signal (K=82, RSI=74, overbought)"
-    └─ ZMR (z-score)    → deviation from MA20 detection → "HOLD (z-score=0.31, normal range)"
+    ├─ ZMR (z-score)    → deviation from MA20 detection → "HOLD (z-score=0.31, normal range)"
+    └─ BB (20/2.0)      → band breakout detection → "BUY signal (하단밴드 이탈)"
               │
-              └─ signal_text (3-line combined)
+              └─ signal_text (4-line combined)
                           │
                           ▼
               Injected directly into DecisionMaking prompt
@@ -345,21 +371,24 @@ current_price = float(df["Close"].iloc[-1])     # Execute trade at day's closing
 ```
 finagent/
 ├── data/
-│   └── fetcher.py                   # pykrx prices, Google RSS news, mplfinance charts
+│   └── fetcher.py                   # pykrx prices/investor trading/fundamentals, Google RSS news, mplfinance charts
+├── llm/
+│   ├── __init__.py
+│   └── client.py                    # Multi-LLM abstraction (anthropic/openai/gemini), temperature control
 ├── memory/
 │   └── store.py                     # ChromaDB wrapper (add / retrieve / diversified_retrieve)
 ├── modules/
-│   ├── market_intelligence.py       # Claude API — news+price analysis, Diversified Retrieval
-│   ├── low_level_reflection.py      # Claude Vision — Kline chart + price change analysis
-│   ├── high_level_reflection.py     # Claude Vision — Trading chart + past decision evaluation
-│   └── decision_making.py           # Claude API — technical indicator injection, BUY/SELL/HOLD decision
+│   ├── market_intelligence.py       # LLM — news+price+investor trading analysis, Diversified Retrieval
+│   ├── low_level_reflection.py      # LLM Vision — Kline chart + price change analysis
+│   ├── high_level_reflection.py     # LLM Vision — Trading chart + past decision evaluation
+│   └── decision_making.py           # LLM — technical indicators + fundamental guidance, BUY/SELL/HOLD
 ├── portfolio/
 │   └── portfolio.py                 # SQLite position·cash·trade history management
 ├── tools/
-│   └── technical_indicators.py      # MACD (12/26/9), KDJ+RSI, ZMR signals
+│   └── technical_indicators.py      # MACD (12/26/9), KDJ+RSI, ZMR, BB (20/2.0) signals
 ├── utils/
 │   ├── schemas.py                   # Pydantic schemas (MIResult, LLRResult, HLRResult, Decision …)
-│   ├── xml_parser.py                # Claude XML response parsing
+│   ├── xml_parser.py                # LLM XML response parsing
 │   └── metrics.py                   # Equity curve, Sharpe, MDD, benchmark, performance chart
 └── main.py                          # Backtesting loop (run_day / run_backtest)
 
@@ -377,6 +406,8 @@ web/                                 # Web UI (FastAPI + SSE)
     └── app.js                       # SSE EventSource client
 
 run_web.py                           # Web UI server entry point
+.env.example                         # API key / LLM provider template (copy to .env)
+.env                                 # Local config — gitignored
 
 job_data/                            # Runtime-generated (gitignore)
 └── {job_id}/
@@ -412,15 +443,31 @@ Current unit tests: **112 passing**
 
 ## Key Design Decisions
 
+### Multi-LLM Abstraction Layer
+`finagent/llm/client.py` provides a unified interface switchable via `LLM_PROVIDER` in `.env`. All four modules (MI, LLR, HLR, DM) use `LLMClient` instead of calling provider SDKs directly.
+
+```python
+LLMClient.chat(messages, max_tokens)               # text — MI, DM
+LLMClient.chat_with_image(prompt, image_b64, ...)  # vision — LLR, HLR
+```
+
+### Reproducibility (FINAGENT_TEMPERATURE)
+`FINAGENT_TEMPERATURE=0` (default) makes all three providers output deterministically, preventing run-to-run variation in BUY/SELL/HOLD decisions. Set to `1.0` to restore each provider's original default behavior.
+
 ### Diversified Retrieval
 MarketIntelligence generates 3 queries (`short_term_query` / `medium_term_query` / `long_term_query`) and independently searches ChromaDB with each to collect up to 6 temporally diverse past memories.
 
 ### Vision API Usage
-- **LLR**: Kline (candlestick) chart image encoded in base64 and passed to Claude → candlestick pattern and volume-based analysis
+- **LLR**: Kline (candlestick) chart image encoded in base64 and passed to the LLM → candlestick pattern and volume-based analysis
 - **HLR**: Trading chart with BUY▲/SELL▽ markers → visual evaluation of past decisions
 
 ### Technical Indicator Injection (Tool Augmentation)
-Simplifying the paper's expert guidance system, MACD·KDJ+RSI·ZMR calculation results are converted to text signals and injected directly into the DecisionMaking prompt.
+MACD, KDJ+RSI, ZMR, and BB calculation results are converted to text signals and injected directly into the DecisionMaking prompt. BB (Bollinger Bands, window=20 std=2.0) supplements the paper's trend/momentum indicators with a mean-reversion perspective.
+
+### KR-ADAPT: Investor Trading & Fundamental Guidance
+Two Korea-specific data sources are injected to replace paper components unavailable for KRX:
+- **Investor trading** (외국인/기관/개인 순매수 from pykrx) → MarketIntelligence prompt, replacing US-market implicit institutional flow
+- **Fundamental guidance** (PER/PBR/배당 vs. 60-day average, ±15% BULLISH/BEARISH signal) → DecisionMaking prompt, replacing Bloomberg/Seeking Alpha analyst reports (§4.4 Expert Guidance)
 
 ### Preventing Look-ahead Bias
 The backtesting loop slices with `price_df.loc[:target_date]` to ensure future data does not influence current decisions.
@@ -431,8 +478,9 @@ The backtesting loop slices with `price_df.loc[:target_date]` to ensure future d
 
 | Library | Purpose |
 |-----------|------|
-| `anthropic` | Claude API (text + Vision) |
-| `pykrx` | KRX stock OHLCV data |
+| `anthropic` | Anthropic Claude API (text + Vision) |
+| `openai` | OpenAI API (text + Vision, optional) |
+| `pykrx` | KRX stock OHLCV data, investor trading, PER/PBR/dividend |
 | `pandas_ta` | MACD, RSI, Stochastic calculations |
 | `mplfinance` | Kline / Trading chart generation |
 | `chromadb` | Vector DB (memory storage and retrieval) |
@@ -441,6 +489,7 @@ The backtesting loop slices with `price_df.loc[:target_date]` to ensure future d
 | `pydantic` | Inter-module data schemas |
 | `fastapi` | Web UI REST API server (including SSE) |
 | `uvicorn` | ASGI server (Web UI execution) |
+| `python-dotenv` | Load `.env` file into environment variables |
 
 ---
 
@@ -452,5 +501,5 @@ The backtesting loop slices with `price_df.loc[:target_date]` to ensure future d
 ## References
 
 - Paper: [A Multimodal Foundation Agent for Financial Trading (arxiv 2402.18485)](https://arxiv.org/abs/2402.18485)
-- LLM: `claude-sonnet-4-6` (Anthropic)
-- Data: KRX (Korea Exchange) — using `pykrx` stock codes
+- Default LLM: `claude-sonnet-4-6` (Anthropic) — switchable to OpenAI / Gemini via `LLM_PROVIDER`
+- Data: KRX (Korea Exchange) — using `pykrx` stock codes, investor trading, PER/PBR/dividend
