@@ -13,9 +13,6 @@ logger = logging.getLogger(__name__)
 # 매수 시 현금의 몇 %를 사용할지
 BUY_RATIO = 0.5
 
-# 논문 §5.1: fixed transaction cost of 0.1% for both buying and selling
-TRANSACTION_COST_RATE = 0.001
-
 
 class Portfolio:
     """현금·포지션·거래 내역을 SQLite로 관리한다."""
@@ -189,32 +186,29 @@ class Portfolio:
 
         if action == "BUY":
             available = cash * BUY_RATIO
-            # 수수료 포함 실질 매수가 산정 후 정수 수량 결정
-            quantity = int(available / (price * (1 + TRANSACTION_COST_RATE)))
+            quantity = int(available / price)
             if quantity < 1:
                 logger.info("BUY skipped: 1주 매수 불가 (cash=%.0f, price=%.0f)", cash, price)
                 return
-            fee = quantity * price * TRANSACTION_COST_RATE
-            new_cash = cash - quantity * price - fee
+            new_cash = cash - quantity * price
             new_position = position + quantity
             self._update_state(new_position, new_cash)
             self._record_trade(target_date, "BUY", quantity, price, reasoning)
             logger.info(
-                "BUY %d @ %.0f fee=%.0f | cash: %.0f → %.0f",
-                quantity, price, fee, cash, new_cash,
+                "BUY %d @ %.0f | cash: %.0f → %.0f",
+                quantity, price, cash, new_cash,
             )
 
         elif action == "SELL":
             if position < 1e-8:
                 logger.info("SELL skipped: no position to sell")
                 return
-            fee = position * price * TRANSACTION_COST_RATE
-            new_cash = cash + position * price - fee
+            new_cash = cash + position * price
             self._update_state(0.0, new_cash)
             self._record_trade(target_date, "SELL", position, price, reasoning)
             logger.info(
-                "SELL %.4f @ %.0f fee=%.0f | cash: %.0f → %.0f",
-                position, price, fee, cash, new_cash,
+                "SELL %.4f @ %.0f | cash: %.0f → %.0f",
+                position, price, cash, new_cash,
             )
 
         else:  # HOLD

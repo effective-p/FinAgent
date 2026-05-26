@@ -81,17 +81,22 @@ git push 권한 없음 — 로컬에서만 관리. 커밋 시 이 파일 참고.
 
 ## 📄 PAPER — 논문에 명시되었으나 누락되어 추가
 
-### 거래 수수료 0.1% (논문 §5.1)
+### ~~거래 수수료 0.1% (논문 §5.1) — 한국 시장 적용 제외~~
 **파일:** `finagent/portfolio/portfolio.py`, `finagent/utils/metrics.py`
 
 **논문 원문 (§5.1 Experiment Settings):**
 > *"Following standard practice in quantitative finance, we assume a fixed transaction cost of 0.1% for both buying and selling."*
 
-**변경 내용:**
-- `TRANSACTION_COST_RATE = 0.001` 상수 추가
-- BUY: `quantity = int(available / (price * 1.001))`
+**제거 결정 (2026-05-26):** 한국 KRX 거래 수수료가 미비하여 제거. 포지션 관리 전략(BUY 후 장기 보유)에서는 수수료 영향이 미미하므로 논문의 US 기준 0.1% 그대로 적용하지 않기로 결정.
+
+**변경 전:**
+- `TRANSACTION_COST_RATE = 0.001` 상수
+- BUY: `quantity = int(available / (price * 1.001))`, fee 공제
 - SELL: `new_cash = cash + position * price - fee`
-- `metrics.py` equity curve 재현도 동일하게 반영
+
+**변경 후 (수수료 제거):**
+- BUY: `quantity = int(available / price)`
+- SELL: `new_cash = cash + position * price`
 
 ---
 
@@ -282,7 +287,7 @@ FINAGENT_TEMPERATURE=1.0  # 각 provider 원래 기본값 (재현성 없음)
 | 3 | 🐛 BUG | lookback_days 날짜 버그 | `main.py` | §5.1 실험 재현 가능성 | ❌ |
 | 4 | 🐛 BUG | 포트폴리오 리셋 누락 | `portfolio.py`, `main.py` | §5.1 초기 자본 독립성 | ❌ |
 | 5 | 🐛 BUG | 성과 차트 한글 폰트 깨짐 | `metrics.py` | — | ✅ |
-| 6 | 📄 PAPER | 거래 수수료 0.1% | `portfolio.py`, `metrics.py` | §5.1 명시 | ❌ |
+| 6 | ~~📄 PAPER~~ | ~~거래 수수료 0.1%~~ **→ 제거** (한국 KRX 수수료 미비) | `portfolio.py`, `metrics.py` | §5.1 명시 | 제거됨 |
 | 7 | 📄 PAPER | LLR Diversified Retrieval 3방향 | `low_level_reflection.py` | §4.1 명시, Ablation RQ4 | ⚠️ |
 | 8 | 📄 PAPER | HLR에 과거 LLR 메모리 | `high_level_reflection.py` | §4.3 step 6, Appendix F.3 | ⚠️ |
 | 9 | 📄 PAPER | DM analysis 필드 + 제약조건 | `decision_making.py`, `schemas.py` | Appendix F.4 | ⚠️ |

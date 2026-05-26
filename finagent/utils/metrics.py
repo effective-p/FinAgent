@@ -24,9 +24,6 @@ TRADING_DAYS_PER_YEAR = 252
 # Equity curve
 # ---------------------------------------------------------------------------
 
-_TRANSACTION_COST_RATE = 0.001  # 논문 §5.1: 0.1% per trade
-
-
 def compute_equity_curve(
     trades: List[TradeAction],
     price_df: pd.DataFrame,
@@ -36,7 +33,6 @@ def compute_equity_curve(
     """Trade 히스토리를 재현하여 일별 총 자산가치 시리즈를 반환한다.
 
     index: date, values: 총 포트폴리오 가치(현금 + 포지션 평가액)
-    수수료(0.1%)는 Portfolio.execute()와 동일하게 적용한다.
     """
     sorted_trades = sorted(trades, key=lambda t: t.date)
     cash = initial_cash
@@ -51,12 +47,10 @@ def compute_equity_curve(
         while trade_idx < len(sorted_trades) and sorted_trades[trade_idx].date <= day:
             t = sorted_trades[trade_idx]
             if t.action == "BUY" and t.quantity > 0:
-                fee = t.quantity * t.price * _TRANSACTION_COST_RATE
                 position += t.quantity
-                cash -= t.quantity * t.price + fee
+                cash -= t.quantity * t.price
             elif t.action == "SELL" and t.quantity > 0:
-                fee = t.quantity * t.price * _TRANSACTION_COST_RATE
-                cash += t.quantity * t.price - fee
+                cash += t.quantity * t.price
                 position = 0.0
             trade_idx += 1
 

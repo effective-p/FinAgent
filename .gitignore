@@ -230,6 +230,8 @@ __marimo__/
 charts/
 memory_db/
 job_data/
+analyze_result.py
+regenerate_chart.py
 
 # Claude Code local settings
 .claude/
