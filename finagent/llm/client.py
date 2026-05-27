@@ -14,6 +14,8 @@ import os
 import logging
 from typing import List
 
+from finagent.llm.trace import record_chat, record_image_chat
+
 logger = logging.getLogger(__name__)
 
 _DEFAULTS = {
@@ -72,7 +74,9 @@ class LLMClient:
                 temperature=self.temperature,
                 messages=messages,
             )
-            return resp.content[0].text
+            result = resp.content[0].text
+            record_chat(messages, result, self.model, self.temperature)
+            return result
 
         resp = self._client.chat.completions.create(
             model=self.model,
@@ -80,7 +84,9 @@ class LLMClient:
             temperature=self.temperature,
             messages=messages,
         )
-        return resp.choices[0].message.content
+        result = resp.choices[0].message.content
+        record_chat(messages, result, self.model, self.temperature)
+        return result
 
     def chat_with_image(
         self,
@@ -110,7 +116,9 @@ class LLMClient:
                 temperature=self.temperature,
                 messages=messages,
             )
-            return resp.content[0].text
+            result = resp.content[0].text
+            record_image_chat(prompt, result, self.model, self.temperature)
+            return result
 
         # openai / gemini — 동일한 image_url 포맷
         messages = [{
@@ -129,4 +137,6 @@ class LLMClient:
             temperature=self.temperature,
             messages=messages,
         )
-        return resp.choices[0].message.content
+        result = resp.choices[0].message.content
+        record_image_chat(prompt, result, self.model, self.temperature)
+        return result

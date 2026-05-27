@@ -4,7 +4,8 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from web.routes import backtest, charts, results
+from web import runs_db
+from web.routes import backtest, charts, results, review
 
 
 def create_app() -> FastAPI:
@@ -14,9 +15,12 @@ def create_app() -> FastAPI:
         version="1.0.0",
     )
 
+    runs_db.init_db()
+
     app.include_router(backtest.router)
     app.include_router(results.router)
     app.include_router(charts.router)
+    app.include_router(review.router)
 
     # static/ 디렉토리를 루트로 마운트 (index.html 자동 서빙)
     app.mount("/", StaticFiles(directory="web/static", html=True), name="static")

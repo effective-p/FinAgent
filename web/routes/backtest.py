@@ -9,6 +9,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from web import runs_db
 from web.job_store import BacktestJob, create_job, get_job
 from web.schemas import BacktestRequest, JobCreatedResponse
 
@@ -69,7 +70,20 @@ async def start_backtest(req: BacktestRequest):
     chart_dir = f"{job_dir}/charts"
     db_path = f"{job_dir}/portfolio.db"
     memory_dir = f"{job_dir}/memory_db"
+    trace_dir = f"{job_dir}/traces"
     os.makedirs(chart_dir, exist_ok=True)
+
+    runs_db.create_run(
+        run_id=job.job_id,
+        symbol=req.symbol,
+        stock_name=req.stock_name,
+        start_date=str(req.start),
+        end_date=str(req.end),
+        initial_cash=req.initial_cash,
+        trader_preference=req.trader_preference,
+        job_data_dir=job_dir,
+        trace_dir=trace_dir,
+    )
 
     loop = asyncio.get_event_loop()
     progress_cb = _make_progress_callback(job, loop)
@@ -91,18 +105,21 @@ async def start_backtest(req: BacktestRequest):
                     db_path=db_path,
                     memory_dir=memory_dir,
                     chart_dir=chart_dir,
+                    trace_dir=trace_dir,
                     progress_callback=progress_cb,
                     step_callback=step_cb,
                 ),
             )
             job.result = result
             job.status = "done"
+            runs_db.update_run_done(job.job_id, result)
             done_event = {"type": "done", "result": result}
             job.events.append(done_event)
             job.queue.put_nowait(done_event)
         except Exception as exc:
             job.status = "error"
             job.error = str(exc)
+            runs_db.update_run_error(job.job_id, str(exc))
             err_event = {"type": "error", "message": str(exc)}
             job.events.append(err_event)
             job.queue.put_nowait(err_event)

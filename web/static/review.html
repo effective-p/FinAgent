@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinAgent — 백테스트 리뷰</title>
+  <link rel="stylesheet" href="/review.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- 헤더 -->
+  <div class="rv-header">
+    <div class="rv-header-left">
+      <a class="rv-logo" href="/">Fin<span>Agent</span></a>
+      <span class="rv-subtitle">백테스트 리뷰 &amp; 분석</span>
+    </div>
+    <div class="rv-header-right">
+      <a class="rv-btn-new" href="/">+ 새 백테스트</a>
+    </div>
+  </div>
+
+  <div class="rv-layout">
+
+    <!-- 왼쪽: 실행 목록 -->
+    <aside class="rv-sidebar">
+      <div class="rv-sidebar-top">
+        <div class="rv-sidebar-title">실행 이력</div>
+        <input class="rv-search" id="rv-search" type="text" placeholder="종목 검색…" />
+      </div>
+      <div class="rv-compare-bar" id="rv-compare-bar" style="display:none">
+        <span id="rv-compare-count">0개 선택</span>
+        <button class="rv-btn-compare" id="rv-btn-compare">오버레이 비교</button>
+        <button class="rv-btn-compare-cancel" id="rv-btn-compare-cancel">취소</button>
+      </div>
+      <div class="rv-run-list" id="rv-run-list">
+        <div class="rv-run-empty">로딩 중…</div>
+      </div>
+      <div class="rv-sidebar-footer">
+        <button class="rv-btn-toggle-compare" id="rv-btn-toggle-compare">⊕ 비교 선택</button>
+      </div>
+    </aside>
+
+    <!-- 메인 -->
+    <main class="rv-main" id="rv-main">
+
+      <!-- 초기 안내 -->
+      <div class="rv-welcome" id="rv-welcome">
+        <div class="rv-welcome-icon">📊</div>
+        <div class="rv-welcome-title">백테스트 결과를 선택하세요</div>
+        <div class="rv-welcome-sub">왼쪽 목록에서 실행 결과를 클릭하면 상세 내용이 표시됩니다.</div>
+      </div>
+
+      <!-- 비교 차트 영역 -->
+      <div class="rv-compare-view" id="rv-compare-view" style="display:none">
+        <div class="rv-card">
+          <div class="rv-card-title">멀티 종목 수익률 비교 (시작=100 기준 정규화)</div>
+          <canvas id="rv-compare-chart" height="90"></canvas>
+        </div>
+        <div class="rv-card">
+          <div class="rv-card-title">성과 요약</div>
+          <div class="rv-table-wrap">
+            <table class="rv-table" id="rv-compare-table">
+              <thead>
+                <tr><th>종목</th><th>기간</th><th>성향</th><th>총수익</th><th>B&amp;H수익</th><th>초과수익</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 실행 상세 -->
+      <div class="rv-run-detail" id="rv-run-detail" style="display:none">
+
+        <div class="rv-run-header">
+          <div class="rv-run-title">
+            <span class="rv-run-stock" id="rv-d-stock"></span>
+            <span class="rv-run-symbol" id="rv-d-symbol"></span>
+            <span class="rv-run-badge" id="rv-d-status"></span>
+          </div>
+          <div class="rv-run-meta">
+            <span id="rv-d-period"></span>
+            <span id="rv-d-cash"></span>
+            <span id="rv-d-pref"></span>
+          </div>
+        </div>
+
+        <!-- KPI -->
+        <div class="rv-card">
+          <div class="rv-card-title">성과 지표</div>
+          <div class="rv-kpi-grid" id="rv-kpi-grid"></div>
+          <div class="rv-trade-counts" id="rv-trade-counts"></div>
+        </div>
+
+        <!-- 성과 차트 -->
+        <div class="rv-card">
+          <div class="rv-card-title">성과 차트 (FinAgent vs Buy&amp;Hold)</div>
+          <div class="rv-perf-chart">
+            <img id="rv-perf-img" src="" alt="성과 차트" style="display:none" />
+            <div class="rv-no-chart" id="rv-no-perf-chart">차트 없음</div>
+          </div>
+        </div>
+
+        <!-- 거래 내역 -->
+        <div class="rv-card">
+          <div class="rv-card-title">일별 거래 내역 — 클릭하면 워크플로우 상세 보기</div>
+          <div class="rv-day-filter">
+            <button class="rv-filter-btn active" data-filter="all">전체</button>
+            <button class="rv-filter-btn" data-filter="BUY">BUY</button>
+            <button class="rv-filter-btn" data-filter="SELL">SELL</button>
+            <button class="rv-filter-btn" data-filter="HOLD">HOLD</button>
+          </div>
+          <div class="rv-table-wrap">
+            <table class="rv-table" id="rv-day-table">
+              <thead>
+                <tr>
+                  <th>날짜</th><th>액션</th><th>가격</th><th>수량</th><th>판단 근거</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="rv-day-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 계산식 -->
+        <div class="rv-card rv-formula-card">
+          <div class="rv-card-title rv-collapsible-title" id="rv-formula-toggle">
+            📐 계산식 설명 <span class="rv-toggle-icon">▼</span>
+          </div>
+          <div class="rv-formula-body" id="rv-formula-body">
+            <div class="rv-formula-section">
+              <div class="rv-formula-section-title">성과 지표</div>
+              <div class="rv-formula-grid">
+                <div class="rv-formula-item"><div class="rv-formula-name">총 수익률</div><code>(final − initial) / initial × 100</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">연간 환산 수익률</div><code>(final/initial)^(1/years) − 1 &nbsp;│&nbsp; years = n_days/252</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">Sharpe Ratio</div><code>(E[r] − rf) / σ × √252 &nbsp;│&nbsp; rf = 3%/year</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">Sortino Ratio</div><code>annualized_return / downside_std × 100</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">Calmar Ratio</div><code>annualized_return / |MDD|</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">MDD</div><code>min((equity − cummax(equity)) / cummax(equity))</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">연간 변동성</div><code>std(daily_returns) × √252 × 100</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">Equity Curve</div><code>value[t] = cash[t] + position[t] × close[t]</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">Buy&amp;Hold</div><code>shares = initial / close[0] &nbsp;│&nbsp; value[t] = shares × close[t]</code></div>
+              </div>
+            </div>
+            <div class="rv-formula-section">
+              <div class="rv-formula-section-title">기술적 지표</div>
+              <div class="rv-formula-grid">
+                <div class="rv-formula-item">
+                  <div class="rv-formula-name">MACD (12,26,9)</div>
+                  <code>MACD = EMA(12) − EMA(26) &nbsp;│&nbsp; Signal = EMA(9) of MACD</code>
+                  <div class="rv-formula-rule">Golden cross (MACD↑Signal) → BUY &nbsp;│&nbsp; Dead cross → SELL</div>
+                </div>
+                <div class="rv-formula-item">
+                  <div class="rv-formula-name">KDJ (9,3,3) + RSI(14)</div>
+                  <code>K = Stoch(9,3) &nbsp;│&nbsp; D = EMA(3,K) &nbsp;│&nbsp; J = 3K − 2D</code>
+                  <div class="rv-formula-rule">K&lt;20 &amp; RSI&lt;30 → BUY &nbsp;│&nbsp; K&gt;80 &amp; RSI&gt;70 → SELL</div>
+                </div>
+                <div class="rv-formula-item">
+                  <div class="rv-formula-name">ZMR (20)</div>
+                  <code>Z = (price − MA20) / std20</code>
+                  <div class="rv-formula-rule">Z &lt; −1.5 → BUY &nbsp;│&nbsp; Z &gt; 1.5 → SELL</div>
+                </div>
+                <div class="rv-formula-item">
+                  <div class="rv-formula-name">Bollinger (20, 2σ)</div>
+                  <code>Upper = MA20 + 2σ &nbsp;│&nbsp; Lower = MA20 − 2σ &nbsp;│&nbsp; %B = (price−Lower)/(Upper−Lower)×100</code>
+                  <div class="rv-formula-rule">price ≤ Lower → BUY &nbsp;│&nbsp; price ≥ Upper → SELL</div>
+                </div>
+              </div>
+            </div>
+            <div class="rv-formula-section">
+              <div class="rv-formula-section-title">포트폴리오 실행 규칙</div>
+              <div class="rv-formula-grid">
+                <div class="rv-formula-item"><div class="rv-formula-name">BUY 수량</div><code>qty = int(cash × 0.5 / price) — 가용 현금의 50% 사용</code></div>
+                <div class="rv-formula-item"><div class="rv-formula-name">SELL</div><code>전량 매도: cash += position × price &nbsp;│&nbsp; position = 0</code></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /#rv-run-detail -->
+    </main>
+  </div><!-- /.rv-layout -->
+
+  <!-- 워크플로우 드로어 -->
+  <div class="rv-drawer-overlay" id="rv-drawer-overlay"></div>
+  <div class="rv-drawer" id="rv-drawer">
+    <div class="rv-drawer-header">
+      <div class="rv-drawer-title" id="rv-drawer-title">워크플로우</div>
+      <button class="rv-drawer-close" id="rv-drawer-close">✕</button>
+    </div>
+    <div class="rv-drawer-body" id="rv-drawer-body">
+      <div class="rv-loading">로딩 중…</div>
+    </div>
+  </div>
+
+  <!-- LLM 팝업 -->
+  <div class="rv-modal-overlay" id="rv-modal-overlay"></div>
+  <div class="rv-modal" id="rv-modal">
+    <div class="rv-modal-header">
+      <div class="rv-modal-title" id="rv-modal-title">LLM 호출 상세</div>
+      <button class="rv-modal-close" id="rv-modal-close">✕</button>
+    </div>
+    <div class="rv-modal-meta" id="rv-modal-meta"></div>
+    <div class="rv-modal-body" id="rv-modal-body"></div>
+  </div>
+
+  <script src="/review.js"></script>
+</body>
+</html>

@@ -10,7 +10,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import sys
 from datetime import date
 
@@ -20,12 +22,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from finagent.data.fetcher import DataFetcher
+from finagent.llm.trace import begin_trace, end_trace
 from finagent.memory.store import MemoryStore
 from finagent.modules.decision_making import DecisionMakingModule
 from finagent.modules.high_level_reflection import HighLevelReflectionModule
 from finagent.modules.low_level_reflection import LowLevelReflectionModule
 from finagent.modules.market_intelligence import MarketIntelligenceModule
 from finagent.portfolio.portfolio import Portfolio
+from finagent.tools.technical_indicators import get_technical_signals
 from finagent.utils.metrics import (
     compute_benchmark,
     compute_equity_curve,
@@ -59,6 +63,7 @@ def run_day(
     dm_module: DecisionMakingModule,
     trader_preference: str = "moderate",
     step_callback=None,
+    trace_dir: str | None = None,
 ) -> Decision:
     """하루치 전체 파이프라인을 실행하고 Decision을 반환한다."""
 
@@ -75,8 +80,12 @@ def run_day(
     df = price_df.loc[:pd.Timestamp(target_date)]
     current_price = float(df["Close"].iloc[-1])
 
+    trace: dict | None = {"date": str(target_date), "symbol": symbol, "stock_name": stock_name,
+                          "current_price": current_price, "steps": {}} if trace_dir else None
+
     # 1. 데이터 수집
     _step("news_fetch")
+    begin_trace("news_fetch")
     news = fetcher.get_news(symbol, stock_name, target_date)
     investor_data = fetcher.get_investor_trading(symbol, target_date)
     fundamental_guidance = fetcher.get_fundamental_guidance(symbol, target_date)
@@ -84,35 +93,127 @@ def run_day(
     trading_path = fetcher.plot_trading_chart(
         df, portfolio.recent_actions(14), target_date, symbol,
     )
+    if trace is not None:
+        trace["steps"]["news_fetch"] = {
+            "llm_calls": end_trace(),
+            "news_count": len(news),
+            "news": [{"title": n.title, "summary": n.summary[:300], "published": str(n.published)} for n in news],
+            "investor_data": investor_data or "",
+            "fundamental_guidance": fundamental_guidance or "",
+            "kline_image": kline_path,
+            "trading_image": trading_path,
+        }
+    else:
+        end_trace()
 
     # 2. Market Intelligence
     _step("market_intelligence")
+    begin_trace("market_intelligence")
     mi_result = mi_module.run(symbol, target_date, df, news, investor_data=investor_data)
+    if trace is not None:
+        trace["steps"]["market_intelligence"] = {
+            "llm_calls": end_trace(),
+            "output": {
+                "latest_summary": mi_result.latest_summary,
+                "past_summary": mi_result.past_summary,
+                "short_term_query": mi_result.short_term_query,
+                "medium_term_query": mi_result.medium_term_query,
+                "long_term_query": mi_result.long_term_query,
+            },
+        }
+    else:
+        end_trace()
 
     # 3. Low-Level Reflection
     _step("low_level_reflection")
+    begin_trace("low_level_reflection")
     llr_result = llr_module.run(symbol, target_date, df, kline_path, mi_result)
+    if trace is not None:
+        trace["steps"]["low_level_reflection"] = {
+            "llm_calls": end_trace(),
+            "kline_image": kline_path,
+            "output": {
+                "short_term_reasoning": llr_result.short_term_reasoning,
+                "medium_term_reasoning": llr_result.medium_term_reasoning,
+                "long_term_reasoning": llr_result.long_term_reasoning,
+                "query": llr_result.query,
+            },
+        }
+    else:
+        end_trace()
 
     # 4. High-Level Reflection
     _step("high_level_reflection")
+    begin_trace("high_level_reflection")
     hlr_result = hlr_module.run(
         symbol, target_date, trading_path,
         portfolio.recent_actions(14), mi_result, llr_result,
     )
+    if trace is not None:
+        trace["steps"]["high_level_reflection"] = {
+            "llm_calls": end_trace(),
+            "trading_image": trading_path,
+            "output": {
+                "reasoning": hlr_result.reasoning,
+                "improvement": hlr_result.improvement,
+                "summary": hlr_result.summary,
+                "query": hlr_result.query,
+            },
+        }
+    else:
+        end_trace()
 
-    # 5. Decision Making
+    # 5. Decision Making — portfolio_state는 execute() 전에 캡처
     _step("decision_making")
     portfolio_state = portfolio.get_state(current_price)
+    begin_trace("decision_making")
     decision = dm_module.run(
         symbol, target_date, df,
         mi_result, llr_result, hlr_result,
         portfolio_state, trader_preference,
         fundamental_guidance=fundamental_guidance,
     )
+    if trace is not None:
+        tech = get_technical_signals(df)
+        trace["steps"]["decision_making"] = {
+            "llm_calls": end_trace(),
+            "technical_signals": tech.signal_text,
+            "portfolio_state": {
+                "cash": portfolio_state.cash,
+                "position": portfolio_state.position,
+                "total_value": portfolio_state.total_value,
+            },
+            "output": {
+                "action": decision.action,
+                "reasoning": decision.reasoning,
+                "analysis": decision.analysis,
+            },
+        }
+    else:
+        end_trace()
 
     # 6. 거래 실행
     _step("trade_execution")
     portfolio.execute(decision.action, current_price, target_date, decision.reasoning)
+    if trace is not None:
+        state_after = portfolio.get_state(current_price)
+        trace["steps"]["trade_execution"] = {
+            "action": decision.action,
+            "price": current_price,
+            "cash_before": portfolio_state.cash,
+            "cash_after": state_after.cash,
+            "position_before": portfolio_state.position,
+            "position_after": state_after.position,
+            "total_value_before": portfolio_state.total_value,
+            "total_value_after": state_after.total_value,
+        }
+        os.makedirs(trace_dir, exist_ok=True)
+        trace_path = os.path.join(trace_dir, f"{target_date}.json")
+        try:
+            with open(trace_path, "w", encoding="utf-8") as f:
+                json.dump(trace, f, ensure_ascii=False, default=str, indent=2)
+        except Exception:
+            logger.exception("Failed to write trace for %s", target_date)
 
     logger.info(
         "%s @ %.0f | cash=%.0f pos=%.4f total=%.0f",
@@ -137,12 +238,14 @@ def run_backtest(
     db_path: str = "portfolio.db",
     memory_dir: str = "memory_db",
     chart_dir: str = "charts",
+    trace_dir: str | None = None,
     progress_callback=None,
     step_callback=None,
 ) -> dict:
     """start ~ end 기간 동안 백테스팅을 실행하고 결과를 반환한다.
 
     Args:
+        trace_dir: 하루치 워크플로우 트레이스 JSON을 저장할 디렉토리 (None이면 저장 안 함).
         progress_callback: 각 거래일 완료 시 호출되는 콜백.
             signature: (day_index, total_days, current_date, action, reasoning) -> None
         step_callback: 각 파이프라인 단계 시작 시 호출되는 콜백.
@@ -159,7 +262,6 @@ def run_backtest(
     dm_module = DecisionMakingModule(memory=memory)
 
     # 전체 기간 + 충분한 lookback 한 번에 수집
-    # today 기준으로 backtest start까지의 거리를 계산해야 과거 데이터를 커버함
     lookback_days = (date.today() - start).days + 90
     logger.info("Fetching price data for %s (lookback=%d days)…", symbol, lookback_days)
     if step_callback:
@@ -198,6 +300,7 @@ def run_backtest(
                 dm_module=dm_module,
                 trader_preference=trader_preference,
                 step_callback=step_callback,
+                trace_dir=trace_dir,
             )
         except Exception:
             logger.exception("Error on %s, skipping day", ts.date())
@@ -237,7 +340,18 @@ def run_backtest(
     )
     basic = portfolio.get_returns(float(backtest_df["Close"].iloc[-1]), initial_cash)
     _print_summary(symbol, stock_name, start, end, basic, perf, bm_return, chart_path)
-    return {**basic, **perf, "benchmark_return_pct": round(bm_return, 2)}
+
+    # equity curve / benchmark curve — 비교 차트용 직렬화
+    equity_curve_data = [{"date": str(d), "value": float(v)} for d, v in equity_curve.items()]
+    benchmark_curve_data = [{"date": str(d), "value": float(v)} for d, v in benchmark.items()]
+
+    return {
+        **basic,
+        **perf,
+        "benchmark_return_pct": round(bm_return, 2),
+        "equity_curve": equity_curve_data,
+        "benchmark_curve": benchmark_curve_data,
+    }
 
 
 def _print_summary(
@@ -291,6 +405,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--db-path",     default="portfolio.db")
     parser.add_argument("--memory-dir",  default="memory_db")
     parser.add_argument("--chart-dir",   default="charts")
+    parser.add_argument("--trace-dir",   default=None, help="워크플로우 트레이스 저장 디렉토리")
     return parser.parse_args()
 
 
@@ -306,5 +421,6 @@ if __name__ == "__main__":
         db_path=args.db_path,
         memory_dir=args.memory_dir,
         chart_dir=args.chart_dir,
+        trace_dir=args.trace_dir,
     )
     sys.exit(0 if results else 1)
