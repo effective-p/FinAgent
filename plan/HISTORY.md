@@ -209,6 +209,21 @@ git push 권한 없음 — 로컬에서만 관리. 커밋 시 이 파일 참고.
 
 ## 🛠 UX — 프로그램 사용 편의 (논문 검증 결과에 영향 없음)
 
+### 백테스트 리뷰 & 분석 UI — `/review` (2026-05-27)
+**파일:** `finagent/llm/trace.py` (신규), `web/runs_db.py` (신규), `web/routes/review.py` (신규), `web/static/review.html/css/js` (신규), `finagent/llm/client.py`, `finagent/main.py`, `web/app.py`, `web/routes/backtest.py` (수정), `migrate_old_runs.py` (신규)
+
+**내용:** `http://localhost:8000/review` 에서 별도 UI 제공. 기존 백테스트 UI(`/`)와 완전 독립.
+
+주요 기능:
+- **실행 이력** — SQLite(`finagent_runs.db`)에 영구 저장. 서버 재시작 후에도 유지.
+- **날짜별 워크플로우 드로어** — 거래일 클릭 시 6단계 파이프라인(데이터수집→MI→LLR→HLR→DM→체결) 전체 표시
+- **LLM 팝업** — 각 단계에서 LLM에 넘긴 프롬프트 원문 + 응답 확인
+- **멀티 종목 비교** — Chart.js 기반 정규화 equity curve 오버레이
+- **계산식 카드** — MACD, KDJ, RSI, ZMR, 볼린저, Sharpe, MDD 등 모든 공식 표시
+- **트레이스 저장** — `{job_dir}/traces/{날짜}.json`에 단계별 입출력 기록 (신규 실행부터 적용)
+
+---
+
 ### `.env` 파일을 통한 API 키 설정 지원
 **파일:** `finagent/main.py`, `run_web.py`, `requirements.txt`, `environment.yml`, `.env.example` (신규)
 
@@ -300,3 +315,4 @@ FINAGENT_TEMPERATURE=1.0  # 각 provider 원래 기본값 (재현성 없음)
 | 16 | 🛠 UX | 멀티 LLM 추상화 레이어 | `finagent/llm/`, 4개 모듈 | — | ✅ |
 | 17 | 🛠 UX | 성과 차트 재생성 유틸리티 | `regenerate_chart.py` | — | ✅ |
 | 18 | 🛠 UX | FINAGENT_TEMPERATURE 추가 (기본값 0) | `llm/client.py`, `.env.example` | §5.1 재현성 | ❌ |
+| 19 | 🛠 UX | 백테스트 리뷰 & 분석 UI (`/review`) | `finagent/llm/trace.py`, `web/runs_db.py`, `web/routes/review.py`, `web/static/review.*` 등 11개 | — | ✅ |
