@@ -272,7 +272,11 @@ function connectSSE(streamUrl, formData) {
     try { data = JSON.parse(evt.data); } catch { return; }
 
     if (data.type === 'step') {
-      activatePipelineStep(data.step);
+      if (data.step === 'waiting') {
+        progressLabel.textContent = '다른 백테스트 실행 중 — 대기 중…';
+      } else {
+        activatePipelineStep(data.step);
+      }
     } else if (data.type === 'progress') {
       completePipelineDay();
       handleProgress(data);

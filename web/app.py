@@ -28,6 +28,11 @@ def create_app() -> FastAPI:
 
     app.mount("/", StaticFiles(directory="web/static", html=True), name="static")
 
+    @app.on_event("startup")
+    async def _recover_queued_batches() -> None:
+        from web import batch_queue  # noqa: PLC0415
+        batch_queue.recover_queued()
+
     return app
 
 

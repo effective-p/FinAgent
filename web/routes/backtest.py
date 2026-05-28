@@ -84,42 +84,49 @@ async def start_backtest(req: BacktestRequest, current_user: dict = Depends(get_
     step_cb = _make_step_callback(job, loop)
 
     async def run_in_thread():
-        job.status = "running"
-        try:
-            run_backtest = _get_run_backtest()
-            result = await loop.run_in_executor(
-                None,
-                lambda: run_backtest(
-                    symbol=req.symbol,
-                    stock_name=req.stock_name,
-                    start=req.start,
-                    end=req.end,
-                    run_id=job.job_id,
-                    initial_cash=req.initial_cash,
-                    trader_preference=req.trader_preference,
-                    llm_provider=llm_cfg.get("provider"),
-                    llm_model=llm_cfg.get("model"),
-                    llm_api_key=llm_cfg.get("api_key"),
-                    llm_base_url=llm_cfg.get("base_url"),
-                    chart_dir=os.path.join("job_data", job.job_id, "charts"),
-                    trace_dir=os.path.join("job_data", job.job_id, "traces"),
-                    progress_callback=progress_cb,
-                    step_callback=step_cb,
-                ),
-            )
-            job.result = result
-            job.status = "done"
-            runs_db.update_run_done(job.job_id, result)
-            done_event = {"type": "done", "result": result}
-            job.events.append(done_event)
-            job.queue.put_nowait(done_event)
-        except Exception as exc:
-            job.status = "error"
-            job.error = str(exc)
-            runs_db.update_run_error(job.job_id, str(exc))
-            err_event = {"type": "error", "message": str(exc)}
-            job.events.append(err_event)
-            job.queue.put_nowait(err_event)
+        from web import batch_queue  # noqa: PLC0415
+        slot = batch_queue.get_run_slot()
+        if slot.locked():
+            wait_event = {"type": "step", "step": "waiting"}
+            job.events.append(wait_event)
+            job.queue.put_nowait(wait_event)
+        async with slot:
+            job.status = "running"
+            try:
+                run_backtest = _get_run_backtest()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: run_backtest(
+                        symbol=req.symbol,
+                        stock_name=req.stock_name,
+                        start=req.start,
+                        end=req.end,
+                        run_id=job.job_id,
+                        initial_cash=req.initial_cash,
+                        trader_preference=req.trader_preference,
+                        llm_provider=llm_cfg.get("provider"),
+                        llm_model=llm_cfg.get("model"),
+                        llm_api_key=llm_cfg.get("api_key"),
+                        llm_base_url=llm_cfg.get("base_url"),
+                        chart_dir=os.path.join("job_data", job.job_id, "charts"),
+                        trace_dir=os.path.join("job_data", job.job_id, "traces"),
+                        progress_callback=progress_cb,
+                        step_callback=step_cb,
+                    ),
+                )
+                job.result = result
+                job.status = "done"
+                runs_db.update_run_done(job.job_id, result)
+                done_event = {"type": "done", "result": result}
+                job.events.append(done_event)
+                job.queue.put_nowait(done_event)
+            except Exception as exc:
+                job.status = "error"
+                job.error = str(exc)
+                runs_db.update_run_error(job.job_id, str(exc))
+                err_event = {"type": "error", "message": str(exc)}
+                job.events.append(err_event)
+                job.queue.put_nowait(err_event)
 
     asyncio.create_task(run_in_thread())
     return JobCreatedResponse(job_id=job.job_id, stream_url=f"/api/backtest/{job.job_id}/stream")
@@ -134,13 +141,17 @@ async def start_batch(req: BatchBacktestRequest, current_user: dict = Depends(ge
     if not req.items:
         raise HTTPException(status_code=400, detail="실행할 백테스트가 없습니다.")
 
-    batch_queue.ensure_worker()
-    run_ids = []
+    # 1) 모든 LLM 설정을 먼저 검증 — 하나라도 실패하면 아무것도 등록하지 않는다(all-or-nothing)
+    resolved = []
     for item in req.items:
         llm_cfg = {}
         if item.llm_config_id:
             llm_cfg = _fetch_llm_config(item.llm_config_id, current_user["id"])
+        resolved.append((item, llm_cfg))
 
+    # 2) 전부 통과하면 DB 등록 + 큐 적재
+    run_ids = []
+    for item, llm_cfg in resolved:
         run_id = str(_uuid.uuid4())
         runs_db.create_run(
             run_id=run_id,
@@ -200,43 +211,50 @@ async def resume_backtest(run_id: str, current_user: dict = Depends(get_current_
     step_cb = _make_step_callback(job, loop)
 
     async def run_in_thread():
-        job.status = "running"
-        try:
-            run_backtest = _get_run_backtest()
-            result = await loop.run_in_executor(
-                None,
-                lambda: run_backtest(
-                    symbol=info["symbol"],
-                    stock_name=info["stock_name"],
-                    start=info["start_date"],
-                    end=info["end_date"],
-                    run_id=run_id,
-                    initial_cash=info["initial_cash"],
-                    trader_preference=info["trader_preference"],
-                    resume_from=info["last_trade_date"],
-                    llm_provider=llm_cfg.get("provider"),
-                    llm_model=llm_cfg.get("model"),
-                    llm_api_key=llm_cfg.get("api_key"),
-                    llm_base_url=llm_cfg.get("base_url"),
-                    chart_dir=os.path.join("job_data", run_id, "charts"),
-                    trace_dir=os.path.join("job_data", run_id, "traces"),
-                    progress_callback=progress_cb,
-                    step_callback=step_cb,
-                ),
-            )
-            job.result = result
-            job.status = "done"
-            runs_db.update_run_done(run_id, result)
-            done_event = {"type": "done", "result": result}
-            job.events.append(done_event)
-            job.queue.put_nowait(done_event)
-        except Exception as exc:
-            job.status = "error"
-            job.error = str(exc)
-            runs_db.update_run_error(run_id, str(exc))
-            err_event = {"type": "error", "message": str(exc)}
-            job.events.append(err_event)
-            job.queue.put_nowait(err_event)
+        from web import batch_queue  # noqa: PLC0415
+        slot = batch_queue.get_run_slot()
+        if slot.locked():
+            wait_event = {"type": "step", "step": "waiting"}
+            job.events.append(wait_event)
+            job.queue.put_nowait(wait_event)
+        async with slot:
+            job.status = "running"
+            try:
+                run_backtest = _get_run_backtest()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: run_backtest(
+                        symbol=info["symbol"],
+                        stock_name=info["stock_name"],
+                        start=info["start_date"],
+                        end=info["end_date"],
+                        run_id=run_id,
+                        initial_cash=info["initial_cash"],
+                        trader_preference=info["trader_preference"],
+                        resume_from=info["last_trade_date"],
+                        llm_provider=llm_cfg.get("provider"),
+                        llm_model=llm_cfg.get("model"),
+                        llm_api_key=llm_cfg.get("api_key"),
+                        llm_base_url=llm_cfg.get("base_url"),
+                        chart_dir=os.path.join("job_data", run_id, "charts"),
+                        trace_dir=os.path.join("job_data", run_id, "traces"),
+                        progress_callback=progress_cb,
+                        step_callback=step_cb,
+                    ),
+                )
+                job.result = result
+                job.status = "done"
+                runs_db.update_run_done(run_id, result)
+                done_event = {"type": "done", "result": result}
+                job.events.append(done_event)
+                job.queue.put_nowait(done_event)
+            except Exception as exc:
+                job.status = "error"
+                job.error = str(exc)
+                runs_db.update_run_error(run_id, str(exc))
+                err_event = {"type": "error", "message": str(exc)}
+                job.events.append(err_event)
+                job.queue.put_nowait(err_event)
 
     asyncio.create_task(run_in_thread())
     return JobCreatedResponse(job_id=job.job_id, stream_url=f"/api/backtest/{job.job_id}/stream")

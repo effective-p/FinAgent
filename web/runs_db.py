@@ -104,13 +104,72 @@ def get_resume_info(run_id: str) -> Optional[dict]:
     }
 
 
-def get_run_status(run_id: str) -> Optional[str]:
-    """run의 현재 status를 반환한다. 없으면 None(삭제/취소됨)."""
+def list_queued_runs() -> list[dict]:
+    """status='queued'로 남은 run들을 등록 순서대로 반환한다(재시작 복구용)."""
+    import datetime as _dt  # noqa: PLC0415
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT status FROM runs WHERE id=%s", (run_id,))
-            row = cur.fetchone()
-    return row[0] if row else None
+            cur.execute(
+                """
+                SELECT r.id, r.symbol, r.stock_name, r.start_date, r.end_date,
+                       r.initial_cash, r.trader_preference,
+                       lc.provider, lc.model, lc.api_key, lc.base_url
+                FROM runs r
+                LEFT JOIN llm_configs lc ON lc.id = r.llm_config_id
+                WHERE r.status = 'queued'
+                ORDER BY r.created_at ASC
+                """
+            )
+            rows = cur.fetchall()
+
+    def _to_date(v):
+        return _dt.date.fromisoformat(str(v)) if isinstance(v, str) else v
+
+    return [
+        {
+            "run_id": row[0],
+            "symbol": row[1],
+            "stock_name": row[2],
+            "start": _to_date(row[3]),
+            "end": _to_date(row[4]),
+            "initial_cash": float(row[5]),
+            "trader_preference": row[6],
+            "llm": {"provider": row[7], "model": row[8],
+                    "api_key": row[9] or None, "base_url": row[10]},
+        }
+        for row in rows
+    ]
+
+
+def claim_queued_run(run_id: str) -> bool:
+    """'queued' 상태인 run을 원자적으로 'running'으로 전환한다.
+
+    삭제(취소)되었거나 이미 다른 상태면 0행이 갱신되어 False를 반환한다.
+    get_run_status 후 update 하는 TOCTOU 경쟁을 피한다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status='running', error_msg=NULL "
+                "WHERE id=%s AND status='queued'",
+                (run_id,),
+            )
+            return cur.rowcount > 0
+
+
+def fail_stale_running() -> int:
+    """서버 재시작 시 고아가 된 'running' run들을 'error'로 표시한다.
+
+    새 프로세스 시작 시점에는 실제로 실행 중인 백테스트가 없으므로
+    'running'으로 남아 있는 건 모두 이전 프로세스에서 중단된 것이다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status='error', error_msg='서버 재시작으로 중단됨' "
+                "WHERE status='running'"
+            )
+            return cur.rowcount
 
 
 def delete_run(run_id: str) -> bool:
