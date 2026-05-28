@@ -224,22 +224,21 @@ function renderDetail(run) {
   renderKPI(run.result || {});
 
   const resumeBtn = $('rv-btn-resume');
-  if (isOwner && (run.status === 'error' || run.status === 'running')) {
+  if (run.status === 'error' || run.status === 'running') {
     resumeBtn.style.display = '';
-    resumeBtn.disabled = false;
+    resumeBtn.disabled = !isOwner;
+    resumeBtn.title = isOwner ? '' : '본인의 실행만 재실행할 수 있습니다.';
     resumeBtn.textContent = '▶ 이어서 실행';
-    resumeBtn.onclick = () => resumeRun(run.id);
+    resumeBtn.onclick = isOwner ? () => resumeRun(run.id) : null;
   } else {
     resumeBtn.style.display = 'none';
   }
 
   const deleteBtn = $('rv-btn-delete');
-  if (isOwner) {
-    deleteBtn.style.display = '';
-    deleteBtn.onclick = () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date);
-  } else {
-    deleteBtn.style.display = 'none';
-  }
+  deleteBtn.style.display = '';
+  deleteBtn.disabled = !isOwner;
+  deleteBtn.title = isOwner ? '' : '본인의 실행만 삭제할 수 있습니다.';
+  deleteBtn.onclick = isOwner ? () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date) : null;
 }
 
 async function deleteRun(runId, stockName, startDate, endDate) {
