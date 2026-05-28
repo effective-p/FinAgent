@@ -220,9 +220,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .rv-run-symbol { background: var(--bg3); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .rv-run-badge { font-size: 11px; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
 .rv-run-badge.done { background: rgba(63,185,80,.15); color: var(--green); }
-.rv-run-badge.running { background: rgba(88,166,255,.15); color: var(--accent); animation: badge-pulse 1.8s ease-in-out infinite; }
+.rv-run-badge.running { background: rgba(88,166,255,.15); color: var(--accent); }
 .rv-run-badge.running:hover { background: rgba(88,166,255,.35); }
-@keyframes badge-pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+.rv-spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid rgba(88,166,255,.3); border-top-color: var(--accent); border-radius: 50%; animation: rv-spin .7s linear infinite; margin-right: 4px; vertical-align: middle; }
+.rv-spinner-sm { display: inline-block; width: 8px; height: 8px; border: 1.5px solid rgba(88,166,255,.3); border-top-color: var(--accent); border-radius: 50%; animation: rv-spin .7s linear infinite; margin-right: 3px; vertical-align: middle; }
+@keyframes rv-spin { to { transform: rotate(360deg); } }
 .rv-run-badge.error { background: rgba(248,81,73,.15); color: var(--red); }
 .rv-btn-resume { margin-left: 8px; padding: 3px 12px; font-size: 12px; font-weight: 600; background: rgba(248,81,73,.2); color: var(--red); border: 1px solid rgba(248,81,73,.4); border-radius: 4px; cursor: pointer; }
 .rv-btn-resume:hover { background: rgba(248,81,73,.35); }

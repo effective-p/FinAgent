@@ -97,7 +97,8 @@ function renderRunList() {
 }
 
 function statusLabel(s) {
-  return { done: '완료', running: '실행중', error: '오류' }[s] || s;
+  if (s === 'running') return '<span class="rv-spinner-sm"></span>실행중';
+  return { done: '완료', error: '오류' }[s] || s;
 }
 
 // ── 이벤트 ──────────────────────────────────────────────
@@ -206,7 +207,7 @@ function renderDetail(run) {
   $('rv-d-stock').textContent = run.stock_name;
   $('rv-d-symbol').textContent = run.symbol;
   const badge = $('rv-d-status');
-  badge.textContent = statusLabel(run.status);
+  badge.innerHTML = statusLabel(run.status);
   badge.className = `rv-run-badge ${run.status}`;
   const isOwner = run.username === localStorage.getItem('fa_user');
   if (run.status === 'running' && isOwner) {
