@@ -49,7 +49,7 @@ async function loadRuns() {
 function scheduleAutoRefresh() {
   setTimeout(async () => {
     await loadRuns();
-    if (STATE.runs.some(r => r.status === 'running')) {
+    if (STATE.runs.some(r => r.status === 'running' || r.status === 'queued')) {
       scheduleAutoRefresh();
     }
   }, 5000);
@@ -98,7 +98,7 @@ function renderRunList() {
 
 function statusLabel(s) {
   if (s === 'running') return '<span class="rv-spinner-sm"></span>실행중';
-  return { done: '완료', error: '오류' }[s] || s;
+  return { done: '완료', error: '오류', queued: '대기중' }[s] || s;
 }
 
 // ── 이벤트 ──────────────────────────────────────────────

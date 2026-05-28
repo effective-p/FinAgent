@@ -17,6 +17,7 @@ def create_run(
     trader_preference: str,
     user_id: int | None = None,
     llm_config_id: int | None = None,
+    status: str = "running",
     # 하위 호환: 더 이상 사용 안 하지만 기존 호출자가 넘기는 경우 무시
     job_data_dir: str | None = None,
     trace_dir: str | None = None,
@@ -28,11 +29,11 @@ def create_run(
                 INSERT INTO runs
                     (id, user_id, symbol, stock_name, start_date, end_date,
                      initial_cash, trader_preference, llm_config_id, status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'running')
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 (run_id, user_id, symbol, stock_name, start_date, end_date,
-                 initial_cash, trader_preference, llm_config_id),
+                 initial_cash, trader_preference, llm_config_id, status),
             )
 
 

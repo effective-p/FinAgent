@@ -169,6 +169,96 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
+// ── 일괄 실행 목록 (장바구니) ────────────────────────────────────────────────
+let batchItems = [];
+
+function readFormConfig() {
+  const llmSel = document.getElementById('llm_config_id');
+  const llmConfigId = llmSel && llmSel.value ? parseInt(llmSel.value) : null;
+  const llmLabel = llmSel && llmSel.value
+    ? llmSel.options[llmSel.selectedIndex].textContent.split('(')[0].trim()
+    : '.env 기본값';
+  const stockSel = document.getElementById('stock_select');
+  const [symbol, stockName] = stockSel.value ? stockSel.value.split('|') : ['', ''];
+  return {
+    symbol,
+    stock_name: stockName,
+    start: form.start.value,
+    end: form.end.value,
+    initial_cash: parseFloat(form.initial_cash.value),
+    trader_preference: form.trader_preference.value,
+    llm_config_id: llmConfigId,
+    _llmLabel: llmLabel,
+  };
+}
+
+function renderBatchList() {
+  const list = document.getElementById('batch-list');
+  const cnt = document.getElementById('batch-count');
+  const runBtn = document.getElementById('batch-run-btn');
+  cnt.textContent = batchItems.length + '개';
+  runBtn.disabled = batchItems.length === 0;
+  runBtn.textContent = batchItems.length ? `일괄 실행 (${batchItems.length})` : '일괄 실행';
+  if (!batchItems.length) {
+    list.innerHTML = '<div class="batch-empty">목록이 비어 있습니다. 설정 후 "+ 목록에 추가"를 누르세요.</div>';
+    return;
+  }
+  list.innerHTML = batchItems.map((it, i) => `
+    <div class="batch-item">
+      <span class="batch-item-stock">${escHtml(it.stock_name)} <span class="batch-item-sym">${escHtml(it.symbol)}</span></span>
+      <span class="batch-item-period">${it.start} ~ ${it.end}</span>
+      <span class="batch-item-llm">${escHtml(it._llmLabel)}</span>
+      <button type="button" class="batch-remove" data-i="${i}" title="제거">✕</button>
+    </div>`).join('');
+}
+
+document.getElementById('add-batch-btn').addEventListener('click', () => {
+  const cfg = readFormConfig();
+  if (!cfg.symbol) { showError('종목을 선택하세요.'); return; }
+  if (!cfg.start || !cfg.end) { showError('기간을 입력하세요.'); return; }
+  hideError();
+  batchItems.push(cfg);
+  renderBatchList();
+});
+
+document.getElementById('batch-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('.batch-remove');
+  if (!btn) return;
+  batchItems.splice(parseInt(btn.dataset.i), 1);
+  renderBatchList();
+});
+
+document.getElementById('batch-run-btn').addEventListener('click', async () => {
+  if (!batchItems.length) return;
+  const runBtn = document.getElementById('batch-run-btn');
+  runBtn.disabled = true;
+  runBtn.textContent = '대기열 등록 중…';
+  try {
+    const items = batchItems.map(({ _llmLabel, ...rest }) => rest);
+    const res = await fetch('/api/backtest/batch', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      const detail = Array.isArray(err.detail)
+        ? err.detail.map(e => e.msg || JSON.stringify(e)).join(', ')
+        : (err.detail || '알 수 없는 오류');
+      throw new Error(detail);
+    }
+    const json = await res.json();
+    batchItems = [];
+    renderBatchList();
+    alert(`${json.queued}개 백테스트가 대기열에 등록되었습니다. 순차적으로 실행됩니다.`);
+    window.location.href = '/review.html';
+  } catch (e) {
+    showError('일괄 실행 오류: ' + e.message);
+    runBtn.disabled = false;
+    runBtn.textContent = `일괄 실행 (${batchItems.length})`;
+  }
+});
+
 // ── SSE 연결 ──────────────────────────────────────────────────────────────────
 function connectSSE(streamUrl, formData) {
   if (eventSource) eventSource.close();

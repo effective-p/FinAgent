@@ -35,6 +35,10 @@ class BacktestRequest(BaseModel):
         return v
 
 
+class BatchBacktestRequest(BaseModel):
+    items: list[BacktestRequest]
+
+
 class JobCreatedResponse(BaseModel):
     job_id: str
     stream_url: str

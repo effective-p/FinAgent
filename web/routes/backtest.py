@@ -12,7 +12,7 @@ from web import runs_db
 from web.auth import get_current_user, get_current_user_from_token
 from web.db import get_conn
 from web.job_store import BacktestJob, create_job, get_job
-from web.schemas import BacktestRequest, JobCreatedResponse
+from web.schemas import BacktestRequest, BatchBacktestRequest, JobCreatedResponse
 
 
 def _get_run_backtest():
@@ -123,6 +123,50 @@ async def start_backtest(req: BacktestRequest, current_user: dict = Depends(get_
 
     asyncio.create_task(run_in_thread())
     return JobCreatedResponse(job_id=job.job_id, stream_url=f"/api/backtest/{job.job_id}/stream")
+
+
+@router.post("/api/backtest/batch")
+async def start_batch(req: BatchBacktestRequest, current_user: dict = Depends(get_current_user)):
+    """여러 백테스트를 큐에 등록해 순차 실행한다. 각 항목은 개별 run_id로 격리된다."""
+    import uuid as _uuid  # noqa: PLC0415
+    from web import batch_queue  # noqa: PLC0415
+
+    if not req.items:
+        raise HTTPException(status_code=400, detail="실행할 백테스트가 없습니다.")
+
+    batch_queue.ensure_worker()
+    run_ids = []
+    for item in req.items:
+        llm_cfg = {}
+        if item.llm_config_id:
+            llm_cfg = _fetch_llm_config(item.llm_config_id, current_user["id"])
+
+        run_id = str(_uuid.uuid4())
+        runs_db.create_run(
+            run_id=run_id,
+            symbol=item.symbol,
+            stock_name=item.stock_name,
+            start_date=str(item.start),
+            end_date=str(item.end),
+            initial_cash=item.initial_cash,
+            trader_preference=item.trader_preference,
+            user_id=current_user["id"],
+            llm_config_id=item.llm_config_id,
+            status="queued",
+        )
+        batch_queue.enqueue({
+            "run_id": run_id,
+            "symbol": item.symbol,
+            "stock_name": item.stock_name,
+            "start": item.start,
+            "end": item.end,
+            "initial_cash": item.initial_cash,
+            "trader_preference": item.trader_preference,
+            "llm": llm_cfg,
+        })
+        run_ids.append(run_id)
+
+    return {"queued": len(run_ids), "run_ids": run_ids}
 
 
 @router.post("/api/backtest/{run_id}/resume", response_model=JobCreatedResponse)

@@ -503,6 +503,36 @@ tr:hover td { background: rgba(255,255,255,0.03); }
   font-size: 13px;
 }
 
+/* ── 일괄 실행 목록 (장바구니) ── */
+.form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.form-actions .btn { flex: 1; min-width: 150px; width: auto; }
+.btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--border); }
+.batch-empty { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
+.batch-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.batch-item-stock { font-weight: 600; min-width: 140px; }
+.batch-item-sym { color: var(--text-muted); font-weight: 400; font-size: 11px; }
+.batch-item-period { color: var(--text-muted); font-family: monospace; }
+.batch-item-llm { color: var(--accent); margin-left: auto; }
+.batch-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+.batch-remove:hover { color: var(--sell); }
+
 /* ── 반응형 ── */
 @media (max-width: 600px) {
   .form-grid { grid-template-columns: 1fr; }

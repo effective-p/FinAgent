@@ -130,6 +130,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .rv-run-item-status.done { background: rgba(63,185,80,.15); color: var(--green); }
 .rv-run-item-status.running { background: rgba(88,166,255,.15); color: var(--accent); }
 .rv-run-item-status.error { background: rgba(248,81,73,.15); color: var(--red); }
+.rv-run-item-status.queued { background: rgba(210,153,34,.15); color: var(--yellow); }
 .rv-run-item-period { font-size: 11px; color: var(--text-muted); }
 .rv-run-item-kpi { font-size: 11px; display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
 .rv-run-item-ret { font-weight: 600; }
@@ -226,6 +227,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .rv-spinner-sm { display: inline-block; width: 8px; height: 8px; border: 1.5px solid rgba(88,166,255,.3); border-top-color: var(--accent); border-radius: 50%; animation: rv-spin .7s linear infinite; margin-right: 3px; vertical-align: middle; }
 @keyframes rv-spin { to { transform: rotate(360deg); } }
 .rv-run-badge.error { background: rgba(248,81,73,.15); color: var(--red); }
+.rv-run-badge.queued { background: rgba(210,153,34,.15); color: var(--yellow); }
 .rv-btn-resume { margin-left: 8px; padding: 3px 12px; font-size: 12px; font-weight: 600; background: rgba(248,81,73,.2); color: var(--red); border: 1px solid rgba(248,81,73,.4); border-radius: 4px; cursor: pointer; }
 .rv-btn-resume:hover { background: rgba(248,81,73,.35); }
 .rv-btn-resume:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -86,11 +86,32 @@
 
           </div><!-- /.form-grid -->
 
-          <button type="submit" class="btn" id="submit-btn">
-            백테스트 실행
-          </button>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="submit-btn">
+              백테스트 실행
+            </button>
+            <button type="button" class="btn btn-secondary" id="add-batch-btn">
+              + 목록에 추가
+            </button>
+          </div>
         </form>
       </div><!-- /.card -->
+
+      <!-- ── 일괄 실행 목록 (장바구니) ── -->
+      <div class="card" id="batch-card" style="margin-top:16px">
+        <div class="card-title">
+          일괄 실행 목록 <span id="batch-count" style="font-size:13px;font-weight:400;color:var(--text-muted)">0개</span>
+        </div>
+        <div id="batch-list">
+          <div class="batch-empty">목록이 비어 있습니다. 설정 후 "+ 목록에 추가"를 누르세요.</div>
+        </div>
+        <button type="button" class="btn" id="batch-run-btn" disabled style="margin-top:12px">
+          일괄 실행
+        </button>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
+          담은 순서대로 하나씩 순차 실행됩니다. 실행 후 "결과 비교"에서 진행 상황을 확인하세요.
+        </div>
+      </div>
     </div><!-- /#panel-form -->
 
     <!-- ══════════════════════════════════════════════
