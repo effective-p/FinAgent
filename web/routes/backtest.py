@@ -136,7 +136,15 @@ async def resume_backtest(run_id: str, current_user: dict = Depends(get_current_
 
     llm_cfg = {}
     if info["llm_config_id"]:
-        llm_cfg = _fetch_llm_config(info["llm_config_id"], current_user["id"])
+        with get_conn() as _conn:
+            with _conn.cursor() as _cur:
+                _cur.execute(
+                    "SELECT provider, model, api_key, base_url FROM llm_configs WHERE id=%s",
+                    (info["llm_config_id"],),
+                )
+                _row = _cur.fetchone()
+        if _row:
+            llm_cfg = {"provider": _row[0], "model": _row[1], "api_key": _row[2] or None, "base_url": _row[3]}
 
     job = create_job()
     runs_db.update_run_running(run_id)
