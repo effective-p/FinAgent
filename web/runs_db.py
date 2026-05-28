@@ -72,12 +72,12 @@ def get_resume_info(run_id: str) -> Optional[dict]:
                 """
                 SELECT r.symbol, r.stock_name, r.start_date, r.end_date,
                        r.initial_cash, r.trader_preference, r.llm_config_id,
-                       MAX(t.date) as last_trade_date
+                       MAX(t.date) as last_trade_date, r.user_id
                 FROM runs r
                 LEFT JOIN trades t ON t.run_id = r.id
                 WHERE r.id = %s
                 GROUP BY r.symbol, r.stock_name, r.start_date, r.end_date,
-                         r.initial_cash, r.trader_preference, r.llm_config_id
+                         r.initial_cash, r.trader_preference, r.llm_config_id, r.user_id
                 """,
                 (run_id,),
             )
@@ -99,6 +99,7 @@ def get_resume_info(run_id: str) -> Optional[dict]:
         "trader_preference": row[5],
         "llm_config_id": row[6],
         "last_trade_date": _to_date(row[7]),
+        "user_id": row[8],
     }
 
 

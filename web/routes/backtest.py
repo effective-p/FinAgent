@@ -130,6 +130,8 @@ async def resume_backtest(run_id: str, current_user: dict = Depends(get_current_
     info = runs_db.get_resume_info(run_id)
     if not info:
         raise HTTPException(status_code=404, detail="실행 정보를 찾을 수 없습니다.")
+    if info.get("user_id") is not None and info["user_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="본인의 실행만 재실행할 수 있습니다.")
 
     if info["last_trade_date"] is None:
         raise HTTPException(status_code=400, detail="이어서 실행할 거래 내역이 없습니다.")
