@@ -25,8 +25,8 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def authenticate_user(username: str, password: str) -> Optional[dict]:
     import unicodedata  # noqa: PLC0415
-    username = unicodedata.normalize("NFC", username)
-    password = unicodedata.normalize("NFC", password)
+    username = unicodedata.normalize("NFKC", username)
+    password = unicodedata.normalize("NFKC", password)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
