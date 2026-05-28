@@ -208,7 +208,8 @@ function renderDetail(run) {
   const badge = $('rv-d-status');
   badge.textContent = statusLabel(run.status);
   badge.className = `rv-run-badge ${run.status}`;
-  if (run.status === 'running') {
+  const isOwner = run.username === localStorage.getItem('fa_user');
+  if (run.status === 'running' && isOwner) {
     badge.title = '클릭하면 진행 화면으로 이동';
     badge.style.cursor = 'pointer';
     badge.onclick = () => resumeRun(run.id);
@@ -223,7 +224,7 @@ function renderDetail(run) {
   renderKPI(run.result || {});
 
   const resumeBtn = $('rv-btn-resume');
-  if (run.status === 'error' || run.status === 'running') {
+  if (isOwner && (run.status === 'error' || run.status === 'running')) {
     resumeBtn.style.display = '';
     resumeBtn.disabled = false;
     resumeBtn.textContent = '▶ 이어서 실행';
@@ -232,7 +233,13 @@ function renderDetail(run) {
     resumeBtn.style.display = 'none';
   }
 
-  $('rv-btn-delete').onclick = () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date);
+  const deleteBtn = $('rv-btn-delete');
+  if (isOwner) {
+    deleteBtn.style.display = '';
+    deleteBtn.onclick = () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date);
+  } else {
+    deleteBtn.style.display = 'none';
+  }
 }
 
 async function deleteRun(runId, stockName, startDate, endDate) {
