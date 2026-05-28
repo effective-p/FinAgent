@@ -104,6 +104,15 @@ def get_resume_info(run_id: str) -> Optional[dict]:
     }
 
 
+def get_run_status(run_id: str) -> Optional[str]:
+    """run의 현재 status를 반환한다. 없으면 None(삭제/취소됨)."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM runs WHERE id=%s", (run_id,))
+            row = cur.fetchone()
+    return row[0] if row else None
+
+
 def delete_run(run_id: str) -> bool:
     """run_id에 해당하는 실행 기록과 관련 데이터를 삭제한다. 성공 시 True 반환."""
     with get_conn() as conn:

@@ -27,6 +27,10 @@ def _get_run_backtest():
 async def _run_item(item: dict, loop: asyncio.AbstractEventLoop) -> None:
     run_id = item["run_id"]
     llm = item["llm"]
+    # 대기 중 삭제(취소)된 경우 건너뜀
+    if runs_db.get_run_status(run_id) is None:
+        logger.info("Skipping cancelled/deleted run: %s", run_id)
+        return
     runs_db.update_run_running(run_id)
     run_backtest = _get_run_backtest()
     result = await loop.run_in_executor(

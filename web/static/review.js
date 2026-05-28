@@ -238,12 +238,21 @@ function renderDetail(run) {
   const deleteBtn = $('rv-btn-delete');
   deleteBtn.style.display = '';
   deleteBtn.disabled = !isOwner;
-  deleteBtn.title = isOwner ? '' : '본인의 실행만 삭제할 수 있습니다.';
-  deleteBtn.onclick = isOwner ? () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date) : null;
+  const queued = run.status === 'queued';
+  deleteBtn.textContent = queued ? '⏏ 실행 대기 취소' : '🗑 삭제';
+  deleteBtn.title = isOwner
+    ? (queued ? '대기열에서 제거합니다.' : '')
+    : '본인의 실행만 삭제할 수 있습니다.';
+  deleteBtn.onclick = isOwner
+    ? () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date, queued)
+    : null;
 }
 
-async function deleteRun(runId, stockName, startDate, endDate) {
-  const confirmed = confirm(`삭제하시겠습니까?\n\n${stockName}  ${startDate} ~ ${endDate}\n\n이 작업은 되돌릴 수 없습니다.`);
+async function deleteRun(runId, stockName, startDate, endDate, queued) {
+  const msg = queued
+    ? `실행 대기 중인 백테스트를 취소하시겠습니까?\n\n${stockName}  ${startDate} ~ ${endDate}`
+    : `삭제하시겠습니까?\n\n${stockName}  ${startDate} ~ ${endDate}\n\n이 작업은 되돌릴 수 없습니다.`;
+  const confirmed = confirm(msg);
   if (!confirmed) return;
 
   try {
