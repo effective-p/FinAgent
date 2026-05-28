@@ -174,9 +174,10 @@ function connectSSE(streamUrl, formData) {
   if (eventSource) eventSource.close();
 
   const url = streamUrl + '?token=' + encodeURIComponent(getToken());
-  eventSource = new EventSource(url);
+  const es = new EventSource(url);
+  eventSource = es;
 
-  eventSource.onmessage = (evt) => {
+  es.onmessage = (evt) => {
     let data;
     try { data = JSON.parse(evt.data); } catch { return; }
 
@@ -186,19 +187,19 @@ function connectSSE(streamUrl, formData) {
       completePipelineDay();
       handleProgress(data);
     } else if (data.type === 'done') {
-      eventSource.close();
+      es.close();
       handleDone(data.result, formData);
     } else if (data.type === 'error') {
-      eventSource.close();
+      es.close();
       showError(data.message);
       submitBtn.disabled = false;
       submitBtn.textContent = '백테스트 실행';
     }
   };
 
-  eventSource.onerror = () => {
-    // EventSource 자동 재연결 — 명시적 종료 아니면 재연결 허용
-    if (eventSource.readyState === EventSource.CLOSED) {
+  es.onerror = () => {
+    // 이 인스턴스(es)가 실제로 닫혔을 때만 오류 표시
+    if (es.readyState === EventSource.CLOSED) {
       showError('서버 연결이 끊겼습니다. 페이지를 새로고침하여 결과를 확인하세요.');
     }
   };
