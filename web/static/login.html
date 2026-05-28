@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinAgent — 로그인</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 40px 36px;
+      width: 360px;
+    }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: #8b949e; font-size: 13px; margin-bottom: 28px; }
+    label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 10px 12px;
+      background: #0d1117; border: 1px solid #30363d;
+      border-radius: 6px; color: #e6edf3; font-size: 14px;
+      margin-bottom: 16px;
+      outline: none;
+    }
+    input:focus { border-color: #58a6ff; }
+    button {
+      width: 100%; padding: 11px;
+      background: #238636; border: none; border-radius: 6px;
+      color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #2ea043; }
+    .error { color: #f85149; font-size: 13px; margin-top: 12px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>FinAgent</h1>
+    <p class="subtitle">AI 트레이딩 에이전트 백테스팅 플랫폼</p>
+    <label for="username">사용자 ID</label>
+    <input id="username" type="text" placeholder="user1 ~ user4" autocomplete="username">
+    <label for="password">비밀번호</label>
+    <input id="password" type="password" placeholder="비밀번호" autocomplete="current-password">
+    <button onclick="login()">로그인</button>
+    <p class="error" id="errmsg"></p>
+  </div>
+
+  <script>
+    async function login() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const errmsg = document.getElementById('errmsg');
+      errmsg.style.display = 'none';
+
+      const body = new URLSearchParams({ username, password });
+      try {
+        const res = await fetch('/api/auth/login', { method: 'POST', body });
+        if (!res.ok) {
+          const d = await res.json();
+          errmsg.textContent = d.detail || '로그인 실패';
+          errmsg.style.display = 'block';
+          return;
+        }
+        const data = await res.json();
+        localStorage.setItem('fa_token', data.access_token);
+        localStorage.setItem('fa_user', data.username);
+        window.location.href = '/';
+      } catch (e) {
+        errmsg.textContent = '서버 연결 오류';
+        errmsg.style.display = 'block';
+      }
+    }
+
+    document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+  </script>
+</body>
+</html>

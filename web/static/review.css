@@ -131,10 +131,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .rv-run-item-status.running { background: rgba(88,166,255,.15); color: var(--accent); }
 .rv-run-item-status.error { background: rgba(248,81,73,.15); color: var(--red); }
 .rv-run-item-period { font-size: 11px; color: var(--text-muted); }
-.rv-run-item-kpi { font-size: 11px; display: flex; gap: 10px; margin-top: 4px; }
+.rv-run-item-kpi { font-size: 11px; display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
 .rv-run-item-ret { font-weight: 600; }
 .rv-run-item-ret.pos { color: var(--green); }
 .rv-run-item-ret.neg { color: var(--red); }
+.rv-run-item-llm { color: var(--accent); opacity: 0.75; margin-left: auto; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .rv-run-item-compare {
   display: none;
@@ -219,8 +220,15 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .rv-run-symbol { background: var(--bg3); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .rv-run-badge { font-size: 11px; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
 .rv-run-badge.done { background: rgba(63,185,80,.15); color: var(--green); }
-.rv-run-badge.running { background: rgba(88,166,255,.15); color: var(--accent); }
+.rv-run-badge.running { background: rgba(88,166,255,.15); color: var(--accent); animation: badge-pulse 1.8s ease-in-out infinite; }
+.rv-run-badge.running:hover { background: rgba(88,166,255,.35); }
+@keyframes badge-pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
 .rv-run-badge.error { background: rgba(248,81,73,.15); color: var(--red); }
+.rv-btn-resume { margin-left: 8px; padding: 3px 12px; font-size: 12px; font-weight: 600; background: rgba(248,81,73,.2); color: var(--red); border: 1px solid rgba(248,81,73,.4); border-radius: 4px; cursor: pointer; }
+.rv-btn-resume:hover { background: rgba(248,81,73,.35); }
+.rv-btn-resume:disabled { opacity: 0.5; cursor: not-allowed; }
+.rv-btn-delete { margin-left: 8px; padding: 3px 12px; font-size: 12px; font-weight: 600; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+.rv-btn-delete:hover { background: rgba(248,81,73,.15); color: var(--red); border-color: rgba(248,81,73,.4); }
 .rv-run-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; }
 
 /* KPI */

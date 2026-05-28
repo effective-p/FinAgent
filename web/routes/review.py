@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 from web import runs_db
+from web.db import get_conn
 
 router = APIRouter(prefix="/review")
 
@@ -40,43 +40,53 @@ async def get_run(run_id: str):
     return run
 
 
+@router.delete("/api/runs/{run_id}")
+async def delete_run(run_id: str):
+    import shutil  # noqa: PLC0415
+    deleted = runs_db.delete_run(run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
+    job_dir = os.path.join("job_data", run_id)
+    if os.path.isdir(job_dir):
+        shutil.rmtree(job_dir, ignore_errors=True)
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # 일별 거래 내역 (portfolio.db에서 직접 조회)
 # ---------------------------------------------------------------------------
 
 @router.get("/api/runs/{run_id}/days")
 async def list_days(run_id: str):
-    run = runs_db.get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
-
-    db_path = os.path.join(run["job_data_dir"], "portfolio.db")
-    if not os.path.isfile(db_path):
-        return []
-
-    trace_dir = run.get("trace_dir") or ""
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
+    import traceback as _tb
     try:
-        rows = con.execute(
-            "SELECT date, action, quantity, price, reasoning FROM trades ORDER BY id ASC"
-        ).fetchall()
-    finally:
-        con.close()
+        run = runs_db.get_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
 
-    days = []
-    for r in rows:
-        date_str = r["date"]
-        trace_file = os.path.join(trace_dir, f"{date_str}.json") if trace_dir else ""
-        days.append({
-            "date": date_str,
-            "action": r["action"],
-            "quantity": r["quantity"],
-            "price": r["price"],
-            "reasoning": r["reasoning"] or "",
-            "has_trace": bool(trace_dir and os.path.isfile(trace_file)),
-        })
-    return days
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT date, action, quantity, price, reasoning FROM trades WHERE run_id=%s ORDER BY id ASC",
+                    (run_id,),
+                )
+                rows = cur.fetchall()
+
+        trace_dir = os.path.join("job_data", run_id, "traces")
+        return [
+            {
+                "date": r[0], "action": r[1], "quantity": r[2], "price": r[3],
+                "reasoning": r[4] or "",
+                "has_trace": os.path.isfile(os.path.join(trace_dir, f"{r[0]}.json")),
+            }
+            for r in rows
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("=== list_days ERROR ===")
+        _tb.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -88,18 +98,10 @@ async def get_day_trace(run_id: str, date_str: str):
     if ".." in date_str or "/" in date_str or "\\" in date_str:
         raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다.")
 
-    run = runs_db.get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
-
-    trace_dir = run.get("trace_dir") or ""
-    if not trace_dir:
-        raise HTTPException(status_code=404, detail="트레이스 디렉토리가 없습니다.")
-
+    trace_dir = os.path.join("job_data", run_id, "traces")
     trace_path = os.path.join(trace_dir, f"{date_str}.json")
     if not os.path.isfile(trace_path):
         raise HTTPException(status_code=404, detail=f"{date_str} 트레이스가 없습니다.")
-
     with open(trace_path, encoding="utf-8") as f:
         return json.load(f)
 
@@ -110,11 +112,13 @@ async def get_day_trace(run_id: str, date_str: str):
 
 @router.get("/api/runs/{run_id}/perf-chart")
 async def get_perf_chart(run_id: str):
+    if ".." in run_id:
+        raise HTTPException(status_code=400, detail="잘못된 run_id입니다.")
     run = runs_db.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
 
-    chart_dir = os.path.join(run["job_data_dir"], "charts")
+    chart_dir = os.path.join("job_data", run_id, "charts")
     if not os.path.isdir(chart_dir):
         raise HTTPException(status_code=404, detail="차트 디렉토리가 없습니다.")
 
@@ -141,20 +145,14 @@ async def get_day_chart(run_id: str, date_str: str, chart_type: str):
     if not run:
         raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
 
-    trace_dir = run.get("trace_dir") or ""
-    trace_path = os.path.join(trace_dir, f"{date_str}.json") if trace_dir else ""
-    if not trace_path or not os.path.isfile(trace_path):
-        raise HTTPException(status_code=404, detail="트레이스가 없습니다.")
-
-    with open(trace_path, encoding="utf-8") as f:
-        trace = json.load(f)
-
-    img_key = "kline_image" if chart_type == "kline" else "trading_image"
-    img_path = trace.get("steps", {}).get("news_fetch", {}).get(img_key, "")
-    if not img_path or not os.path.isfile(img_path):
+    symbol = run["symbol"]
+    chart_dir = os.path.join("job_data", run_id, "charts")
+    filename = f"{chart_type}_{symbol}_{date_str}.png"
+    path = os.path.join(chart_dir, filename)
+    if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="차트 파일이 없습니다.")
 
-    return FileResponse(img_path, media_type="image/png")
+    return FileResponse(path, media_type="image/png")
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +191,7 @@ async def compare_runs(ids: str):
             "end_date": run["end_date"],
             "trader_preference": run["trader_preference"],
             "status": run["status"],
+            "llm_model": run.get("model") or os.getenv("FINAGENT_MODEL", "gpt-4o-mini"),
             "total_return_pct": res.get("total_return_pct"),
             "benchmark_return_pct": res.get("benchmark_return_pct"),
             "equity_curve": normalize(equity),

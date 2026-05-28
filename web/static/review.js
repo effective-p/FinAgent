@@ -33,6 +33,7 @@ const modalBody     = $('rv-modal-body');
 async function init() {
   await loadRuns();
   bindEvents();
+  scheduleAutoRefresh();
 }
 
 async function loadRuns() {
@@ -43,6 +44,15 @@ async function loadRuns() {
   } catch (e) {
     runList.innerHTML = '<div class="rv-run-empty">실행 이력을 불러올 수 없습니다.</div>';
   }
+}
+
+function scheduleAutoRefresh() {
+  setTimeout(async () => {
+    await loadRuns();
+    if (STATE.runs.some(r => r.status === 'running')) {
+      scheduleAutoRefresh();
+    }
+  }, 5000);
 }
 
 // ── 사이드바 ────────────────────────────────────────────
@@ -65,6 +75,7 @@ function renderRunList() {
     const bhStr = bh == null ? '' : `B&H ${bh >= 0 ? '+' : ''}${bh.toFixed(2)}%`;
     const active = STATE.selectedRunId === r.id ? 'active' : '';
     const checked = STATE.selectedCompareIds.has(r.id) ? 'checked' : '';
+    const llmStr = r.model ? esc(r.model) : (r.provider ? esc(r.provider) : 'gpt-4o-mini');
     return `
       <div class="rv-run-item ${active}" data-id="${r.id}">
         <div class="rv-run-item-compare ${checked}" data-id="${r.id}">✓</div>
@@ -78,6 +89,7 @@ function renderRunList() {
           <div class="rv-run-item-kpi">
             <span class="rv-run-item-ret ${retClass}">${retStr}</span>
             ${bhStr ? `<span style="color:var(--text-muted)">${bhStr}</span>` : ''}
+            <span class="rv-run-item-llm">${llmStr}</span>
           </div>
         </div>
       </div>`;
@@ -196,10 +208,86 @@ function renderDetail(run) {
   const badge = $('rv-d-status');
   badge.textContent = statusLabel(run.status);
   badge.className = `rv-run-badge ${run.status}`;
+  if (run.status === 'running') {
+    badge.title = '클릭하면 진행 화면으로 이동';
+    badge.style.cursor = 'pointer';
+    badge.onclick = () => resumeRun(run.id);
+  } else {
+    badge.style.cursor = '';
+    badge.onclick = null;
+    badge.title = '';
+  }
   $('rv-d-period').textContent = `📅 ${run.start_date} ~ ${run.end_date}`;
   $('rv-d-cash').textContent = `💰 ${fmt0(run.initial_cash)}원`;
   $('rv-d-pref').textContent = `🎯 ${prefLabel(run.trader_preference)}`;
   renderKPI(run.result || {});
+
+  const resumeBtn = $('rv-btn-resume');
+  if (run.status === 'error' || run.status === 'running') {
+    resumeBtn.style.display = '';
+    resumeBtn.disabled = false;
+    resumeBtn.textContent = '▶ 이어서 실행';
+    resumeBtn.onclick = () => resumeRun(run.id);
+  } else {
+    resumeBtn.style.display = 'none';
+  }
+
+  $('rv-btn-delete').onclick = () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date);
+}
+
+async function deleteRun(runId, stockName, startDate, endDate) {
+  const confirmed = confirm(`삭제하시겠습니까?\n\n${stockName}  ${startDate} ~ ${endDate}\n\n이 작업은 되돌릴 수 없습니다.`);
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/review/api/runs/${runId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '삭제 실패');
+    }
+    // 목록에서 제거하고 상세 패널 닫기
+    STATE.runs = STATE.runs.filter(r => r.id !== runId);
+    STATE.selectedRunId = null;
+    renderRunList();
+    $('rv-run-detail').style.display = 'none';
+    $('rv-welcome').style.display = '';
+  } catch (e) {
+    alert('삭제 오류: ' + e.message);
+  }
+}
+
+async function resumeRun(runId) {
+  const btn = $('rv-btn-resume');
+  btn.disabled = true;
+  btn.textContent = '실행 중…';
+  const run = STATE.runs.find(r => r.id === runId);
+  try {
+    const token = localStorage.getItem('fa_token');
+    const res = await fetch(`/api/backtest/${runId}/resume`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '재실행 실패');
+    }
+    const { job_id, stream_url } = await res.json();
+    const params = new URLSearchParams({
+      resume_job: job_id,
+      resume_stream: stream_url,
+      ...(run ? {
+        resume_stock: run.stock_name,
+        resume_symbol: run.symbol,
+        resume_start: run.start_date,
+        resume_end: run.end_date,
+      } : {}),
+    });
+    window.location.href = '/?' + params.toString();
+  } catch (e) {
+    alert('재실행 오류: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '▶ 이어서 실행';
+  }
 }
 
 function prefLabel(p) {
@@ -538,20 +626,21 @@ async function runCompare() {
   renderRunList();
 
   const tbody = document.querySelector('#rv-compare-table tbody');
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">로딩 중…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">로딩 중…</td></tr>';
 
   try {
     const data = await fetch(`/review/api/compare?ids=${ids}`).then(r => r.json());
-    renderCompareChart(data);
-    renderCompareTable(data);
+    const colors = data.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+    renderCompareChart(data, colors);
+    renderCompareTable(data, colors);
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="6">오류: ${esc(String(e))}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7">오류: ${esc(String(e))}</td></tr>`;
   }
 }
 
-const CHART_COLORS = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#39d353','#ff9898','#ffa07a'];
+const CHART_COLORS = ['#58a6ff','#ff7b00','#3fb950','#f85149','#d2a8ff','#ffd700','#00d4d4','#ff69b4'];
 
-function renderCompareChart(data) {
+function renderCompareChart(data, colors) {
   const canvas = $('rv-compare-chart');
   if (STATE.compareChart) {
     STATE.compareChart.destroy();
@@ -560,9 +649,10 @@ function renderCompareChart(data) {
 
   const datasets = [];
   data.forEach((run, i) => {
-    const color = CHART_COLORS[i % CHART_COLORS.length];
+    const color = colors[i];
+    const modelTag = run.llm_model ? ` [${run.llm_model}]` : '';
     datasets.push({
-      label: `${run.stock_name} (${run.symbol})`,
+      label: `${run.stock_name} (${run.symbol})${modelTag}`,
       data: (run.equity_curve || []).map(p => ({ x: p.date, y: p.norm })),
       borderColor: color,
       backgroundColor: 'transparent',
@@ -572,7 +662,7 @@ function renderCompareChart(data) {
     });
     if (run.benchmark_curve?.length) {
       datasets.push({
-        label: `${run.symbol} B&H`,
+        label: `${run.symbol} B&H${modelTag}`,
         data: run.benchmark_curve.map(p => ({ x: p.date, y: p.norm })),
         borderColor: color,
         backgroundColor: 'transparent',
@@ -606,16 +696,18 @@ function renderCompareChart(data) {
   });
 }
 
-function renderCompareTable(data) {
+function renderCompareTable(data, colors) {
   const tbody = document.querySelector('#rv-compare-table tbody');
-  tbody.innerHTML = data.map(run => {
+  tbody.innerHTML = data.map((run, i) => {
+    const color = colors[i];
     const ret = run.total_return_pct;
     const bh = run.benchmark_return_pct;
     const exc = (ret != null && bh != null) ? ret - bh : null;
     const s = (v, pos) => v == null ? '—' : `<span style="color:${pos === null ? 'inherit' : v >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
     return `<tr>
-      <td>${esc(run.stock_name)}<br><span style="color:var(--text-muted);font-size:11px">${esc(run.symbol)}</span></td>
+      <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px"></span>${esc(run.stock_name)}<br><span style="color:var(--text-muted);font-size:11px;margin-left:16px">${esc(run.symbol)}</span></td>
       <td style="font-size:12px">${run.start_date}<br>${run.end_date}</td>
+      <td style="font-size:11px;color:${color};font-weight:600">${esc(run.llm_model || '—')}</td>
       <td>${prefLabel(run.trader_preference)}</td>
       <td>${s(ret, true)}</td>
       <td style="color:var(--text-muted)">${s(bh, null)}</td>

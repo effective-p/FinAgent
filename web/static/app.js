@@ -1,14 +1,42 @@
 /* FinAgent Web UI — SSE 클라이언트 + DOM 조작 */
 'use strict';
 
-// ── 날짜 초기값 설정 ──────────────────────────────────────────────────────────
-(function setDefaultDates() {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const ymd = yesterday.toISOString().slice(0, 10);
-  const endInput = document.getElementById('end');
-  if (endInput && !endInput.value) endInput.value = ymd;
+// ── 인증 ─────────────────────────────────────────────────────────────────────
+function getToken() { return localStorage.getItem('fa_token'); }
+function authHeaders() {
+  return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' };
+}
+function navLogout() {
+  localStorage.removeItem('fa_token');
+  localStorage.removeItem('fa_user');
+  window.location.href = '/login.html';
+}
+
+(function checkAuth() {
+  if (!getToken()) { window.location.href = '/login.html'; }
+  const u = localStorage.getItem('fa_user');
+  const el = document.getElementById('nav-user');
+  if (el && u) el.textContent = u;
 })();
+
+// ── LLM 드롭다운 로드 ────────────────────────────────────────────────────────
+async function loadLLMConfigs() {
+  try {
+    const res = await fetch('/api/llm-configs', { headers: authHeaders() });
+    if (!res.ok) return;
+    const configs = await res.json();
+    const sel = document.getElementById('llm_config_id');
+    if (!sel) return;
+    configs.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.name} (${c.provider}/${c.model})`;
+      sel.appendChild(opt);
+    });
+  } catch { /* ignore */ }
+}
+loadLLMConfigs();
+
 
 // ── 파이프라인 노드 관리 ───────────────────────────────────────────────────────
 const PIPELINE_STEP_IDS = [
@@ -85,34 +113,54 @@ form.addEventListener('submit', async (e) => {
   hideError();
   tradeLog = [];
 
+  const llmSel = document.getElementById('llm_config_id');
+  const llmConfigId = llmSel && llmSel.value ? parseInt(llmSel.value) : null;
+  const llmLabel = llmSel && llmSel.value
+    ? llmSel.options[llmSel.selectedIndex].textContent.split('(')[0].trim()
+    : 'Claude';
+
+  const stockSel = document.getElementById('stock_select');
+  const [symbol, stockName] = stockSel.value ? stockSel.value.split('|') : ['', ''];
+  if (!symbol) { showError('종목을 선택하세요.'); submitBtn.disabled = false; submitBtn.textContent = '백테스트 실행'; return; }
+
   const data = {
-    symbol:           form.symbol.value.trim(),
-    stock_name:       form.stock_name.value.trim(),
+    symbol:           symbol,
+    stock_name:       stockName,
     start:            form.start.value,
     end:              form.end.value,
     initial_cash:     parseFloat(form.initial_cash.value),
     trader_preference: form.trader_preference.value,
+    llm_config_id:    llmConfigId,
   };
 
   submitBtn.disabled = true;
   submitBtn.textContent = '백테스트 시작 중…';
 
+  // 파이프라인 노드에 모델명 반영
+  document.querySelectorAll('.llm-label').forEach(el => {
+    el.textContent = el.textContent.replace('LLM', llmLabel);
+  });
+
+  // 즉시 진행 패널 표시 (POST 응답 전에)
+  showProgressPanel();
+
   try {
     const res = await fetch('/api/backtest', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(data),
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || '알 수 없는 오류가 발생했습니다.');
+      const detail = Array.isArray(err.detail)
+        ? err.detail.map(e => e.msg || JSON.stringify(e)).join(', ')
+        : (err.detail || '알 수 없는 오류가 발생했습니다.');
+      throw new Error(detail);
     }
 
     const { job_id, stream_url } = await res.json();
     currentJobId = job_id;
-
-    showProgressPanel();
     connectSSE(stream_url, data);
   } catch (err) {
     showError(err.message);
@@ -125,7 +173,8 @@ form.addEventListener('submit', async (e) => {
 function connectSSE(streamUrl, formData) {
   if (eventSource) eventSource.close();
 
-  eventSource = new EventSource(streamUrl);
+  const url = streamUrl + '?token=' + encodeURIComponent(getToken());
+  eventSource = new EventSource(url);
 
   eventSource.onmessage = (evt) => {
     let data;
@@ -356,6 +405,25 @@ function showError(msg) {
 function hideError() {
   errorBanner.style.display = 'none';
 }
+
+// ── 재실행 resume 처리 (review 페이지에서 넘어온 경우) ───────────────────────
+(function checkResumeParam() {
+  const params = new URLSearchParams(window.location.search);
+  const jobId = params.get('resume_job');
+  const streamUrl = params.get('resume_stream');
+  if (!jobId || !streamUrl) return;
+  history.replaceState({}, '', '/');
+  currentJobId = jobId;
+  tradeLog = [];
+  const formData = {
+    stock_name: params.get('resume_stock') || '',
+    symbol:     params.get('resume_symbol') || '',
+    start:      params.get('resume_start') || '',
+    end:        params.get('resume_end') || '',
+  };
+  showProgressPanel();
+  connectSSE(streamUrl, formData);
+})();
 
 // ── 새 백테스트 버튼 ──────────────────────────────────────────────────────────
 document.getElementById('btn-new').addEventListener('click', () => {

@@ -50,9 +50,10 @@ class LowLevelReflectionModule:
     def __init__(
         self,
         memory: MemoryStore,
+        llm_client: LLMClient | None = None,
     ) -> None:
         self.memory = memory
-        self._llm = LLMClient()
+        self._llm = llm_client or LLMClient()
 
     def run(
         self,

@@ -233,33 +233,38 @@ def run_backtest(
     stock_name: str,
     start: date,
     end: date,
+    run_id: str | None = None,
     initial_cash: float = 10_000_000,
     trader_preference: str = "moderate",
-    db_path: str = "portfolio.db",
-    memory_dir: str = "memory_db",
     chart_dir: str = "charts",
     trace_dir: str | None = None,
     progress_callback=None,
     step_callback=None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    llm_api_key: str | None = None,
+    llm_base_url: str | None = None,
+    resume_from: date | None = None,
+    # 하위 호환: 더 이상 사용 안 하지만 기존 호출자가 넘기는 경우 무시
+    db_path: str | None = None,
+    memory_dir: str | None = None,
 ) -> dict:
-    """start ~ end 기간 동안 백테스팅을 실행하고 결과를 반환한다.
+    """start ~ end 기간 동안 백테스팅을 실행하고 결과를 반환한다."""
+    import uuid as _uuid  # noqa: PLC0415
+    from finagent.llm.client import LLMClient  # noqa: PLC0415
 
-    Args:
-        trace_dir: 하루치 워크플로우 트레이스 JSON을 저장할 디렉토리 (None이면 저장 안 함).
-        progress_callback: 각 거래일 완료 시 호출되는 콜백.
-            signature: (day_index, total_days, current_date, action, reasoning) -> None
-        step_callback: 각 파이프라인 단계 시작 시 호출되는 콜백.
-            signature: (step_name: str) -> None
-    """
+    if run_id is None:
+        run_id = str(_uuid.uuid4())
+
     fetcher = DataFetcher(chart_dir=chart_dir)
-    memory = MemoryStore(persist_dir=memory_dir)
-    # reset=True: 동일 종목 재실행 시 이전 포지션/거래 내역을 초기화
-    portfolio = Portfolio(symbol=symbol, initial_cash=initial_cash, db_path=db_path, reset=True)
+    memory = MemoryStore(run_id=run_id)
+    portfolio = Portfolio(run_id=run_id, symbol=symbol, initial_cash=initial_cash)
+    llm_client = LLMClient(provider=llm_provider, model=llm_model, api_key=llm_api_key, base_url=llm_base_url)
 
-    mi_module = MarketIntelligenceModule(memory=memory)
-    llr_module = LowLevelReflectionModule(memory=memory)
-    hlr_module = HighLevelReflectionModule(memory=memory)
-    dm_module = DecisionMakingModule(memory=memory)
+    mi_module = MarketIntelligenceModule(memory=memory, llm_client=llm_client)
+    llr_module = LowLevelReflectionModule(memory=memory, llm_client=llm_client)
+    hlr_module = HighLevelReflectionModule(memory=memory, llm_client=llm_client)
+    dm_module = DecisionMakingModule(memory=memory, llm_client=llm_client)
 
     # 전체 기간 + 충분한 lookback 한 번에 수집
     lookback_days = (date.today() - start).days + 90
@@ -276,6 +281,11 @@ def run_backtest(
         (price_df.index >= pd.Timestamp(start)) &
         (price_df.index <= pd.Timestamp(end))
     ]
+
+    # 이어서 실행: 이미 처리된 날은 건너뜀
+    if resume_from is not None:
+        trading_days = trading_days[trading_days > pd.Timestamp(resume_from)]
+        logger.info("Resuming from %s (skipping already-processed days)", resume_from)
 
     if trading_days.empty:
         logger.warning("No trading days found between %s and %s", start, end)
@@ -302,8 +312,15 @@ def run_backtest(
                 step_callback=step_callback,
                 trace_dir=trace_dir,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Error on %s, skipping day", ts.date())
+            # LLM 실패 시에도 HOLD로 기록해 거래일 추적 유지
+            try:
+                portfolio.execute("HOLD", float(price_df.loc[:pd.Timestamp(ts.date()), "Close"].iloc[-1]),
+                                  ts.date(), f"LLM 오류로 인한 강제 HOLD: {exc}")
+                decision = Decision(action="HOLD", reasoning=f"LLM 오류: {exc}", analysis="")
+            except Exception:
+                logger.exception("Fallback HOLD also failed on %s", ts.date())
 
         if progress_callback and decision:
             try:

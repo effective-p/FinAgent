@@ -14,6 +14,7 @@ class BacktestRequest(BaseModel):
     end: date
     initial_cash: float = 10_000_000
     trader_preference: str = "moderate"
+    llm_config_id: Optional[int] = None
 
     @field_validator("trader_preference")
     @classmethod
