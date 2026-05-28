@@ -12,11 +12,11 @@ _pool: pg_pool.ThreadedConnectionPool | None = None
 
 def _dsn() -> str:
     return (
-        f"host={os.environ.get('PG_HOST', '10.0.0.21')} "
+        f"host={os.environ['PG_HOST']} "
         f"port={os.environ.get('PG_PORT', '5433')} "
         f"dbname={os.environ.get('PG_DBNAME', 'finagent')} "
         f"user={os.environ.get('PG_USER', 'postgres')} "
-        f"password={os.environ.get('PG_PASSWORD', 'nvidia')}"
+        f"password={os.environ['PG_PASSWORD']}"
     )
 
 
