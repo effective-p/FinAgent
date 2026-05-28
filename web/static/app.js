@@ -421,7 +421,17 @@ function hideError() {
     start:      params.get('resume_start') || '',
     end:        params.get('resume_end') || '',
   };
+  const resumeRunId = params.get('resume_run_id');
   showProgressPanel();
+  if (resumeRunId) {
+    fetch(`/review/api/runs/${resumeRunId}/days`)
+      .then(r => r.json())
+      .then(days => {
+        days.forEach(d => tradeLog.push({ date: d.date, action: d.action, reasoning: d.reasoning || '' }));
+        renderTradeTable();
+      })
+      .catch(() => {});
+  }
   connectSSE(streamUrl, formData);
 })();
 

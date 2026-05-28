@@ -275,6 +275,7 @@ async function resumeRun(runId) {
     const params = new URLSearchParams({
       resume_job: job_id,
       resume_stream: stream_url,
+      resume_run_id: runId,
       ...(run ? {
         resume_stock: run.stock_name,
         resume_symbol: run.symbol,

@@ -293,7 +293,14 @@ def run_backtest(
 
     logger.info("Running backtest: %s → %s (%d days)", start, end, len(trading_days))
 
-    total_days = len(trading_days)
+    # 전체 일수 기준으로 진행률 계산 (resume 시에도 전체 대비 %)
+    all_trading_days = price_df.index[
+        (price_df.index >= pd.Timestamp(start)) &
+        (price_df.index <= pd.Timestamp(end))
+    ]
+    total_days = len(all_trading_days)
+    completed_days = total_days - len(trading_days)
+
     for i, ts in enumerate(trading_days):
         decision = None
         try:
@@ -325,7 +332,7 @@ def run_backtest(
         if progress_callback and decision:
             try:
                 progress_callback(
-                    day_index=i + 1,
+                    day_index=completed_days + i + 1,
                     total_days=total_days,
                     current_date=ts.date(),
                     action=decision.action,
