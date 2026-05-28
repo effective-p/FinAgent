@@ -247,7 +247,11 @@ async function deleteRun(runId, stockName, startDate, endDate) {
   if (!confirmed) return;
 
   try {
-    const res = await fetch(`/review/api/runs/${runId}`, { method: 'DELETE' });
+    const token = localStorage.getItem('fa_token');
+    const res = await fetch(`/review/api/runs/${runId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || '삭제 실패');
