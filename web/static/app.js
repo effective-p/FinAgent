@@ -142,7 +142,7 @@ form.addEventListener('submit', async (e) => {
   });
 
   // 즉시 진행 패널 표시 (POST 응답 전에)
-  showProgressPanel();
+  showProgressPanel(data);
 
   try {
     const res = await fetch('/api/backtest', {
@@ -377,7 +377,7 @@ function showChart() {
 }
 
 // ── 패널 전환 ─────────────────────────────────────────────────────────────────
-function showProgressPanel() {
+function showProgressPanel(fd) {
   formPanel.style.display = 'none';
   progressPanel.style.display = 'block';
   resultsPanel.style.display = 'none';
@@ -386,6 +386,14 @@ function showProgressPanel() {
   progressPct.textContent = '0%';
   progressLabel.textContent = '준비 중…';
   resetPipeline();
+  const info = document.getElementById('progress-run-info');
+  if (info) {
+    if (fd && fd.stock_name) {
+      info.textContent = `${fd.stock_name} (${fd.symbol})  ${fd.start} ~ ${fd.end}`;
+    } else {
+      info.textContent = '';
+    }
+  }
 }
 
 function showResultsPanel() {
@@ -422,7 +430,7 @@ function hideError() {
     end:        params.get('resume_end') || '',
   };
   const resumeRunId = params.get('resume_run_id');
-  showProgressPanel();
+  showProgressPanel(formData);
   if (resumeRunId) {
     fetch(`/review/api/runs/${resumeRunId}/days`)
       .then(r => r.json())
