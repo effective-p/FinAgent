@@ -115,22 +115,7 @@ CREATE TABLE IF NOT EXISTS portfolio_state (
 
 
 def init_schema() -> None:
-    """스키마 생성 + user1~4 초기 계정 생성 (비밀번호 = 아이디)."""
-    import bcrypt  # noqa: PLC0415
-
+    """스키마 생성. 사용자 계정은 DB에서 직접 관리한다(자동 생성하지 않음)."""
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(_SCHEMA)
-
-        for i in range(1, 5):
-            username = f"user{i}"
-            pw_hash = bcrypt.hashpw(username.encode(), bcrypt.gensalt()).decode()
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO users (username, password_hash)
-                    VALUES (%s, %s)
-                    ON CONFLICT (username) DO NOTHING
-                    """,
-                    (username, pw_hash),
-                )
