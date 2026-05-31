@@ -212,6 +212,23 @@ function bindEvents() {
   $('rv-analysis-ask-input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendQuestion(); }
   });
+
+  // 비교 종합 분석 카드 — 토글 + AI 버튼들
+  $('rv-cmp-analysis-toggle').addEventListener('click', () => {
+    const body = $('rv-cmp-analysis-body');
+    const icon = $('rv-cmp-analysis-toggle').querySelector('.rv-toggle-icon');
+    const hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    icon.style.transform = hidden ? '' : 'rotate(-90deg)';
+  });
+  $('rv-btn-cmp-analyze').addEventListener('click', () => requestCompareAnalysis(false));
+  $('rv-btn-cmp-analyze-regen').addEventListener('click', () => {
+    if (confirm('기존 비교 분석과 토론 내역을 삭제하고 다시 생성합니다. 계속할까요?')) requestCompareAnalysis(true);
+  });
+  $('rv-btn-cmp-ask').addEventListener('click', sendCompareQuestion);
+  $('rv-cmp-ask-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendCompareQuestion(); }
+  });
 }
 
 function toggleCompareSelect(id) {
@@ -708,6 +725,10 @@ async function runCompare() {
     const colors = data.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
     renderCompareChart(data, colors);
     renderCompareTable(data, colors);
+    // 비교 종합 분석 — ids 보존 후 정적·AI 패널 갱신
+    STATE.currentCompareIds = data.map(r => r.run_id);
+    renderCompareAnalysis(data);
+    loadCompareAnalysisThread(STATE.currentCompareIds);
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="7">오류: ${esc(String(e))}</td></tr>`;
   }
@@ -1003,6 +1024,183 @@ function mdToHtml(md) {
   // 단락 (빈 줄 기준)
   s = s.split(/\n{2,}/).map(p => /^<(h\d|ul|li|p)/.test(p.trim()) ? p : `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
   return s;
+}
+
+// ── 비교 종합 분석 (정적 + LLM 스레드) ─────────────────
+function renderCompareAnalysis(data) {
+  const target = $('rv-cmp-analysis-static');
+  if (!data || data.length === 0) { target.innerHTML = ''; return; }
+
+  // 베스트/워스트
+  const rows = data.map((r, i) => {
+    const tr = r.total_return_pct;
+    const bh = r.benchmark_return_pct;
+    const alpha = (tr != null && bh != null) ? (tr - bh) : null;
+    return { i: i + 1, run: r, tr, bh, alpha };
+  });
+  const valid = rows.filter(x => x.tr != null);
+  const bestRet = valid.length ? valid.reduce((a, b) => a.tr > b.tr ? a : b) : null;
+  const worstRet = valid.length ? valid.reduce((a, b) => a.tr < b.tr ? a : b) : null;
+  const validA = rows.filter(x => x.alpha != null);
+  const bestAlpha = validA.length ? validA.reduce((a, b) => a.alpha > b.alpha ? a : b) : null;
+  const winners = validA.filter(x => x.alpha > 0).length;
+  const losers = validA.filter(x => x.alpha < 0).length;
+
+  // 변수 다양성
+  const models = new Set(data.map(r => r.llm_model || '기본'));
+  const stocks = new Set(data.map(r => r.symbol));
+  const prefs  = new Set(data.map(r => r.trader_preference));
+
+  const fmtA = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
+
+  let varHint;
+  if (stocks.size === 1 && models.size > 1) {
+    varHint = '동일 종목·다른 모델 — 결과 차이는 주로 <strong>LLM 모델 선택</strong>에 기인합니다.';
+  } else if (models.size === 1 && stocks.size > 1) {
+    varHint = '동일 모델·다른 종목 — 결과 차이는 주로 <strong>종목 특성</strong>에 기인합니다.';
+  } else if (prefs.size > 1 && stocks.size === 1 && models.size === 1) {
+    varHint = '동일 종목·모델·다른 성향 — 결과 차이는 주로 <strong>트레이더 성향</strong>에 기인합니다.';
+  } else {
+    varHint = '여러 변수가 동시에 다릅니다 — 단일 원인을 단정하기 어렵습니다(통제 변수 부재).';
+  }
+
+  target.innerHTML = `
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">🏆 베스트 / 워스트</div>
+      <ul class="rv-analysis-list">
+        ${bestRet ? `<li>최고 수익: <strong>Run ${bestRet.i} — ${esc(bestRet.run.stock_name)}</strong> <span class="${cls(bestRet.tr)}">${fmtA(bestRet.tr)}</span></li>` : ''}
+        ${worstRet ? `<li>최저 수익: <strong>Run ${worstRet.i} — ${esc(worstRet.run.stock_name)}</strong> <span class="${cls(worstRet.tr)}">${fmtA(worstRet.tr)}</span></li>` : ''}
+        ${bestAlpha ? `<li>최대 알파(α): <strong>Run ${bestAlpha.i}</strong> <span class="${cls(bestAlpha.alpha)}">${fmtA(bestAlpha.alpha)}</span></li>` : ''}
+      </ul>
+    </div>
+
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">📊 베이스라인(Buy&amp;Hold) 비교</div>
+      <ul class="rv-analysis-list">
+        <li>α &gt; 0 (베이스라인 이김): <strong>${winners}</strong>건 / α &lt; 0 (짐): <strong>${losers}</strong>건 / 전체 <strong>${data.length}</strong>건</li>
+        <li>${winners > losers ? '능동 매매 전략이 평균적으로 베이스라인을 이긴 표본 우세' : winners < losers ? '베이스라인이 평균적으로 능동 매매보다 우세' : '베이스라인과 능동 매매가 팽팽함'}</li>
+      </ul>
+    </div>
+
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">🔬 변수별 영향 가설</div>
+      <ul class="rv-analysis-list">
+        <li>비교된 모델: ${models.size}종 · 종목: ${stocks.size}종 · 성향: ${prefs.size}종</li>
+        <li>${varHint}</li>
+      </ul>
+    </div>
+
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">⚠️ 비교 자체의 한계</div>
+      <ul class="rv-analysis-list">
+        <li>표본 ${data.length}건은 통계적 유의성을 주장하기엔 작음</li>
+        <li>기간이 다르면 시장 국면(상승/하락/횡보)도 다름 — 동일 조건 비교 아님</li>
+        <li>모델·종목·성향이 동시 변수일 경우 단일 변수의 효과를 분리하기 어려움</li>
+        <li>LLM 비결정성 (temperature&gt;0) 시 동일 입력에도 결과가 변동 가능</li>
+      </ul>
+    </div>
+  `;
+}
+
+async function loadCompareAnalysisThread(ids) {
+  if (!ids || ids.length < 2) return;
+  try {
+    const res = await fetch(`/review/api/compare/analysis?ids=${ids.join(',')}`);
+    if (!res.ok) return;
+    const { thread } = await res.json();
+    renderCompareThread(thread || []);
+  } catch {}
+}
+
+function renderCompareThread(thread) {
+  const container = $('rv-cmp-analysis-thread');
+  const askArea   = $('rv-cmp-analysis-ask');
+  const btnInit   = $('rv-btn-cmp-analyze');
+  const btnRegen  = $('rv-btn-cmp-analyze-regen');
+
+  if (!thread.length) {
+    container.innerHTML = '';
+    askArea.style.display = 'none';
+    btnInit.style.display = '';
+    btnRegen.style.display = 'none';
+    return;
+  }
+  btnInit.style.display = 'none';
+  btnRegen.style.display = '';
+  askArea.style.display = '';
+
+  container.innerHTML = thread.map(m => {
+    const cls = m.role === 'assistant' ? 'rv-msg-ai' : 'rv-msg-user';
+    const label = m.role === 'assistant' ? '🤖 AI' : '🗣️ 의견·질문';
+    const ts = m.ts ? `<span class="rv-msg-ts">${esc(m.ts.slice(0,16).replace('T',' '))}</span>` : '';
+    return `
+      <div class="rv-msg ${cls}">
+        <div class="rv-msg-head"><span class="rv-msg-label">${label}</span>${ts}</div>
+        <div class="rv-msg-body">${mdToHtml(m.content)}</div>
+      </div>`;
+  }).join('');
+}
+
+async function requestCompareAnalysis(force) {
+  const ids = STATE.currentCompareIds;
+  if (!ids || ids.length < 2) return;
+  const status = $('rv-cmp-analysis-status');
+  const btnInit = $('rv-btn-cmp-analyze');
+  const btnRegen = $('rv-btn-cmp-analyze-regen');
+  btnInit.disabled = true; btnRegen.disabled = true;
+  status.textContent = 'LLM이 비교 분석 중입니다…';
+  try {
+    const token = localStorage.getItem('fa_token');
+    const res = await fetch(`/review/api/compare/analyze`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, force: !!force }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '분석 실패');
+    }
+    const { thread, cached } = await res.json();
+    renderCompareThread(thread || []);
+    status.textContent = cached ? '저장된 비교 분석을 불러왔습니다.' : '비교 분석을 새로 생성했습니다.';
+  } catch (e) {
+    status.textContent = '오류: ' + e.message;
+  } finally {
+    btnInit.disabled = false; btnRegen.disabled = false;
+  }
+}
+
+async function sendCompareQuestion() {
+  const ids = STATE.currentCompareIds;
+  if (!ids || ids.length < 2) return;
+  const input = $('rv-cmp-ask-input');
+  const q = (input.value || '').trim();
+  if (!q) return;
+  const status = $('rv-cmp-analysis-status');
+  const btn = $('rv-btn-cmp-ask');
+  btn.disabled = true; input.disabled = true;
+  status.textContent = 'LLM이 답변 중입니다…';
+  try {
+    const token = localStorage.getItem('fa_token');
+    const res = await fetch(`/review/api/compare/analyze/ask`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, question: q }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '질문 전송 실패');
+    }
+    const { thread } = await res.json();
+    renderCompareThread(thread || []);
+    input.value = '';
+    status.textContent = '';
+  } catch (e) {
+    status.textContent = '오류: ' + e.message;
+  } finally {
+    btn.disabled = false; input.disabled = false;
+  }
 }
 
 // ── 드로어 / 모달 ─────────────────────────────────────

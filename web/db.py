@@ -114,6 +114,13 @@ CREATE TABLE IF NOT EXISTS portfolio_state (
     cash     REAL NOT NULL,
     PRIMARY KEY (run_id, symbol)
 );
+
+CREATE TABLE IF NOT EXISTS comparison_threads (
+    key        TEXT PRIMARY KEY,             -- 정렬된 run_id 콤마결합
+    run_ids    TEXT[] NOT NULL,
+    thread     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 """
 
 

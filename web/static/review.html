@@ -67,6 +67,31 @@
             </table>
           </div>
         </div>
+
+        <!-- 비교 종합 분석 -->
+        <div class="rv-card rv-analysis-card">
+          <div class="rv-card-title rv-collapsible-title" id="rv-cmp-analysis-toggle">
+            🎓 비교 종합 분석 — 학술 + 투자자 관점 <span class="rv-toggle-icon">▼</span>
+          </div>
+          <div class="rv-analysis-body" id="rv-cmp-analysis-body">
+            <div id="rv-cmp-analysis-static"></div>
+            <div class="rv-analysis-section">
+              <div class="rv-analysis-section-title">🤖 AI 비교 의견 &amp; 토론</div>
+              <div class="rv-analysis-thread" id="rv-cmp-analysis-thread"></div>
+              <div class="rv-analysis-ai-controls" id="rv-cmp-analysis-controls">
+                <button class="rv-btn-analyze" id="rv-btn-cmp-analyze">AI 비교 분석 요청</button>
+                <button class="rv-btn-analyze-regen" id="rv-btn-cmp-analyze-regen" style="display:none">↻ 다시 생성</button>
+                <span id="rv-cmp-analysis-status" class="rv-analysis-ai-status"></span>
+              </div>
+              <div class="rv-analysis-ask" id="rv-cmp-analysis-ask" style="display:none">
+                <textarea id="rv-cmp-ask-input" class="rv-analysis-ask-input"
+                  placeholder="비교 결과에 대한 의견·질문을 추가하면 LLM이 이어서 답변합니다. (Ctrl+Enter 로 보내기)"
+                  rows="3"></textarea>
+                <button class="rv-btn-ask" id="rv-btn-cmp-ask">보내기</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 실행 상세 -->

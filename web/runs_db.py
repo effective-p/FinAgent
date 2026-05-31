@@ -133,6 +133,47 @@ def clear_analysis_thread(run_id: str) -> None:
             cur.execute("UPDATE runs SET analysis_thread='[]'::jsonb WHERE id=%s", (run_id,))
 
 
+def compare_key(run_ids: list[str]) -> str:
+    """비교 분석의 표준 키 — 입력 순서에 무관하게 동일한 조합이면 같은 키."""
+    return ",".join(sorted(run_ids))
+
+
+def get_comparison_thread(run_ids: list[str]) -> list:
+    """저장된 비교 분석 스레드 반환. 없으면 빈 리스트."""
+    key = compare_key(run_ids)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT thread FROM comparison_threads WHERE key=%s", (key,))
+            row = cur.fetchone()
+    return row[0] if row else []
+
+
+def append_comparison_message(run_ids: list[str], role: str, content: str) -> None:
+    """비교 스레드에 메시지 추가. 없으면 생성."""
+    import datetime as _dt  # noqa: PLC0415
+    key = compare_key(run_ids)
+    msg = {"role": role, "content": content, "ts": _dt.datetime.utcnow().isoformat() + "Z"}
+    msg_json = json.dumps([msg], ensure_ascii=False)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO comparison_threads (key, run_ids, thread)
+                VALUES (%s, %s, %s::jsonb)
+                ON CONFLICT (key) DO UPDATE
+                    SET thread = comparison_threads.thread || EXCLUDED.thread
+                """,
+                (key, sorted(run_ids), msg_json),
+            )
+
+
+def clear_comparison_thread(run_ids: list[str]) -> None:
+    key = compare_key(run_ids)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM comparison_threads WHERE key=%s", (key,))
+
+
 def list_queued_runs() -> list[dict]:
     """status='queued'로 남은 run들을 등록 순서대로 반환한다(재시작 복구용)."""
     import datetime as _dt  # noqa: PLC0415
