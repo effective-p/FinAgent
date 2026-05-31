@@ -10,6 +10,7 @@ const STATE = {
   compareMode: false,
   selectedCompareIds: new Set(),
   compareChart: null,
+  collapsedGroups: new Set(),  // 사이드바에서 접힌 종목(symbol) 집합
 };
 
 // ── DOM refs ───────────────────────────────────────────
@@ -67,33 +68,58 @@ function renderRunList() {
     return;
   }
 
-  runList.innerHTML = filtered.map(r => {
-    const ret = r.total_return_pct;
-    const retClass = ret == null ? '' : ret >= 0 ? 'pos' : 'neg';
-    const retStr = ret == null ? '—' : (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
-    const bh = r.benchmark_return_pct;
-    const bhStr = bh == null ? '' : `B&H ${bh >= 0 ? '+' : ''}${bh.toFixed(2)}%`;
-    const active = STATE.selectedRunId === r.id ? 'active' : '';
-    const checked = STATE.selectedCompareIds.has(r.id) ? 'checked' : '';
-    const llmStr = r.model ? esc(r.model) : (r.provider ? esc(r.provider) : 'gpt-4o-mini');
+  // 종목별 그룹핑 (입력 순서 = 최신순 유지)
+  const groups = new Map();
+  filtered.forEach(r => {
+    if (!groups.has(r.symbol)) {
+      groups.set(r.symbol, { stock_name: r.stock_name, items: [] });
+    }
+    groups.get(r.symbol).items.push(r);
+  });
+
+  // 검색 중에는 모든 그룹을 펼쳐서 매치 결과를 즉시 보이게
+  const searching = !!query;
+
+  runList.innerHTML = [...groups.entries()].map(([symbol, g]) => {
+    const collapsed = !searching && STATE.collapsedGroups.has(symbol);
+    const itemsHtml = g.items.map(renderRunItem).join('');
     return `
-      <div class="rv-run-item ${active}" data-id="${r.id}">
-        <div class="rv-run-item-compare ${checked}" data-id="${r.id}">✓</div>
-        <div class="rv-run-item-content">
-          <div class="rv-run-item-top">
-            <span class="rv-run-item-stock">${esc(r.stock_name)}</span>
-            <span class="rv-run-item-symbol">${esc(r.symbol)}</span>
-            <span class="rv-run-item-status ${r.status}">${statusLabel(r.status)}</span>
-          </div>
-          <div class="rv-run-item-period">${r.start_date} ~ ${r.end_date}</div>
-          <div class="rv-run-item-kpi">
-            <span class="rv-run-item-ret ${retClass}">${retStr}</span>
-            ${bhStr ? `<span style="color:var(--text-muted)">${bhStr}</span>` : ''}
-            <span class="rv-run-item-llm">${llmStr}</span>
-          </div>
+      <div class="rv-group ${collapsed ? 'collapsed' : ''}">
+        <div class="rv-group-header" data-symbol="${esc(symbol)}">
+          <span class="rv-group-arrow">▼</span>
+          <span class="rv-group-title">${esc(g.stock_name)}</span>
+          <span class="rv-group-symbol">${esc(symbol)}</span>
+          <span class="rv-group-count">${g.items.length}건</span>
         </div>
+        <div class="rv-group-items">${itemsHtml}</div>
       </div>`;
   }).join('');
+}
+
+function renderRunItem(r) {
+  const ret = r.total_return_pct;
+  const retClass = ret == null ? '' : ret >= 0 ? 'pos' : 'neg';
+  const retStr = ret == null ? '—' : (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
+  const bh = r.benchmark_return_pct;
+  const bhStr = bh == null ? '' : `B&H ${bh >= 0 ? '+' : ''}${bh.toFixed(2)}%`;
+  const active = STATE.selectedRunId === r.id ? 'active' : '';
+  const checked = STATE.selectedCompareIds.has(r.id) ? 'checked' : '';
+  const llmStr = r.model ? esc(r.model) : (r.provider ? esc(r.provider) : 'gpt-4o-mini');
+  return `
+    <div class="rv-run-item ${active}" data-id="${r.id}">
+      <div class="rv-run-item-compare ${checked}" data-id="${r.id}">✓</div>
+      <div class="rv-run-item-content">
+        <div class="rv-run-item-top">
+          <span class="rv-run-item-period-top">${r.start_date} ~ ${r.end_date}</span>
+          <span class="rv-run-item-status ${r.status}">${statusLabel(r.status)}</span>
+        </div>
+        <div class="rv-run-item-kpi">
+          <span class="rv-run-item-ret ${retClass}">${retStr}</span>
+          ${bhStr ? `<span style="color:var(--text-muted)">${bhStr}</span>` : ''}
+          <span class="rv-run-item-llm">${llmStr}</span>
+        </div>
+      </div>
+    </div>`;
 }
 
 function statusLabel(s) {
@@ -104,6 +130,14 @@ function statusLabel(s) {
 // ── 이벤트 ──────────────────────────────────────────────
 function bindEvents() {
   runList.addEventListener('click', e => {
+    const header = e.target.closest('.rv-group-header');
+    if (header) {
+      const sym = header.dataset.symbol;
+      if (STATE.collapsedGroups.has(sym)) STATE.collapsedGroups.delete(sym);
+      else STATE.collapsedGroups.add(sym);
+      renderRunList();
+      return;
+    }
     const item = e.target.closest('.rv-run-item');
     if (!item) return;
     const id = item.dataset.id;
