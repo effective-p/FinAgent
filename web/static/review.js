@@ -195,6 +195,23 @@ function bindEvents() {
     body.style.display = hidden ? '' : 'none';
     icon.style.transform = hidden ? '' : 'rotate(-90deg)';
   });
+
+  // 종합 분석 카드 — 토글 + AI 버튼들
+  $('rv-analysis-toggle').addEventListener('click', () => {
+    const body = $('rv-analysis-body');
+    const icon = $('rv-analysis-toggle').querySelector('.rv-toggle-icon');
+    const hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    icon.style.transform = hidden ? '' : 'rotate(-90deg)';
+  });
+  $('rv-btn-analyze').addEventListener('click', () => requestAnalysis(false));
+  $('rv-btn-analyze-regen').addEventListener('click', () => {
+    if (confirm('기존 분석과 토론 내역을 삭제하고 다시 생성합니다. 계속할까요?')) requestAnalysis(true);
+  });
+  $('rv-btn-ask').addEventListener('click', sendQuestion);
+  $('rv-analysis-ask-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendQuestion(); }
+  });
 }
 
 function toggleCompareSelect(id) {
@@ -227,8 +244,11 @@ async function selectRun(runId) {
       fetch(`/review/api/runs/${runId}/days`).then(r => r.json()),
     ]);
     STATE.days = days;
+    STATE.selectedRun = run;
     renderDetail(run);
     renderDayTable();
+    renderAnalysis(run, days);
+    loadAnalysisThread(runId);
     detail.style.display = '';
     loadPerfChart(runId);
   } catch (e) {
@@ -769,6 +789,220 @@ function renderCompareTable(data, colors) {
       <td>${s(exc, true)}</td>
     </tr>`;
   }).join('');
+}
+
+// ── 종합 분석 (정적 + LLM 스레드) ──────────────────────
+function renderAnalysis(run, days) {
+  const target = $('rv-analysis-static');
+  const res = run.result || {};
+  const tr = res.total_return_pct, bh = res.benchmark_return_pct;
+  const alpha = (tr != null && bh != null) ? (tr - bh) : null;
+  const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
+
+  const counts = { BUY: 0, SELL: 0, HOLD: 0 };
+  (days || []).forEach(d => { counts[d.action] = (counts[d.action] || 0) + 1; });
+  const total = counts.BUY + counts.SELL + counts.HOLD;
+  const holdPct = total ? (counts.HOLD / total * 100) : 0;
+
+  const provider = (run.provider || '').toLowerCase();
+  const model = (run.model || '').toLowerCase();
+  const visionCapable = /claude|gpt-4o|gemini|gemma|llava|vision/.test(model + provider);
+  const visionNote = visionCapable
+    ? '선택한 모델은 비전 입력을 지원하므로 LLR/HLR의 차트 이미지 분석이 활성화됩니다.'
+    : '⚠️ 선택한 모델은 텍스트 전용으로 추정됩니다 — LLR/HLR의 차트 이미지 분석이 제한될 수 있어 논문의 멀티모달 가정 일부가 약화됩니다.';
+
+  let baselineVerdict;
+  if (alpha == null) baselineVerdict = '베이스라인과의 비교를 위한 데이터가 부족합니다.';
+  else if (alpha > 1) baselineVerdict = `능동 매매가 베이스라인 대비 +${alpha.toFixed(2)}%p의 알파를 만들었습니다.`;
+  else if (alpha < -1) baselineVerdict = `능동 매매는 베이스라인에 ${alpha.toFixed(2)}%p 미달 — Buy&Hold가 우세했습니다.`;
+  else baselineVerdict = '베이스라인과 거의 동일 — 능동 매매가 의미 있는 가치를 더하지 못했습니다.';
+
+  target.innerHTML = `
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">📊 베이스라인(Buy&amp;Hold) 비교</div>
+      <ul class="rv-analysis-list">
+        <li>전략 수익률 <strong class="${cls(tr)}">${fmtPct(tr)}</strong> · B&amp;H 수익률 <strong>${fmtPct(bh)}</strong></li>
+        <li>초과수익(α): <strong class="${cls(alpha)}">${fmtPct(alpha, true)}</strong></li>
+        <li>${baselineVerdict}</li>
+      </ul>
+    </div>
+
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">⚖️ 위험 조정 수익</div>
+      <ul class="rv-analysis-list">
+        <li>Sharpe: <strong>${fmtNum(res.sharpe_ratio)}</strong> · Sortino: <strong>${fmtNum(res.sortino_ratio)}</strong> · Calmar: <strong>${fmtNum(res.calmar_ratio)}</strong></li>
+        <li>최대 낙폭(MDD): <strong class="${cls(res.max_drawdown_pct)}">${fmtPct(res.max_drawdown_pct)}</strong> · 연 변동성: <strong>${fmtPct(res.volatility_annual_pct)}</strong></li>
+        <li>${ratioVerdict(res.sharpe_ratio)}</li>
+      </ul>
+    </div>
+
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">🎯 거래 행동 분포</div>
+      <ul class="rv-analysis-list">
+        <li>BUY <strong>${counts.BUY}</strong> · SELL <strong>${counts.SELL}</strong> · HOLD <strong>${counts.HOLD}</strong> (총 ${total}일)</li>
+        <li>HOLD 비율 <strong>${holdPct.toFixed(1)}%</strong> — ${holdPct > 80 ? '매우 보수적' : holdPct > 60 ? '보수적' : holdPct > 40 ? '중립' : '적극적'} 매매 패턴</li>
+        <li>설정 성향: ${esc(prefLabel(run.trader_preference))}</li>
+      </ul>
+    </div>
+
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">🧩 논문 모듈 매핑 (arxiv 2402.18485)</div>
+      <ul class="rv-analysis-list">
+        <li><strong>DataFetcher</strong>: pykrx OHLCV + Google RSS 뉴스(±7일 윈도)</li>
+        <li><strong>Market Intelligence + Diversified Retrieval</strong>: 단/중/장기 3가지 질의로 ChromaDB 회상</li>
+        <li><strong>Low-Level Reflection (Vision)</strong>: kline 차트 이미지 분석 (모델 비전 지원 필요)</li>
+        <li><strong>High-Level Reflection</strong>: 과거 결정+결과 평가 → 트레이딩 차트 이미지로 검증</li>
+        <li><strong>Decision Making + Tool-Augmented Signals</strong>: MACD / KDJ+RSI / ZMR / Bollinger 텍스트 시그널 주입</li>
+      </ul>
+    </div>
+
+    <div class="rv-analysis-section">
+      <div class="rv-analysis-section-title">⚠️ 본 구현의 한계점</div>
+      <ul class="rv-analysis-list">
+        <li>${visionNote}</li>
+        <li>뉴스 소스가 Google RSS 단일 — 노이즈/중복 가능성, 영문 원문 누락</li>
+        <li>단일 종목 백테스트 — 포트폴리오 분산 효과 미검증</li>
+        <li>슬리피지·거래수수료·시장충격(Market Impact) 미반영</li>
+        <li>기간 365일 이내 — 장기 사이클(경기/금리) 효과 검증 어려움</li>
+        <li>BUY는 가용 현금의 50%, SELL은 전량 매도로 단순화 — 논문의 포지션 사이징은 더 정교</li>
+        <li>LLM 호출의 비결정성 (temperature&gt;0일 경우 재현성 저하)</li>
+      </ul>
+    </div>
+  `;
+}
+
+async function loadAnalysisThread(runId) {
+  try {
+    const res = await fetch(`/review/api/runs/${runId}/analysis`);
+    if (!res.ok) return;
+    const { thread } = await res.json();
+    renderThread(thread || []);
+  } catch {}
+}
+
+function renderThread(thread) {
+  const container = $('rv-analysis-thread');
+  const askArea   = $('rv-analysis-ask');
+  const btnInit   = $('rv-btn-analyze');
+  const btnRegen  = $('rv-btn-analyze-regen');
+
+  if (!thread.length) {
+    container.innerHTML = '';
+    askArea.style.display = 'none';
+    btnInit.style.display = '';
+    btnRegen.style.display = 'none';
+    return;
+  }
+
+  btnInit.style.display = 'none';
+  btnRegen.style.display = '';
+  askArea.style.display = '';
+
+  container.innerHTML = thread.map(m => {
+    const cls = m.role === 'assistant' ? 'rv-msg-ai' : 'rv-msg-user';
+    const label = m.role === 'assistant' ? '🤖 AI' : '🗣️ 의견·질문';
+    const ts = m.ts ? `<span class="rv-msg-ts">${esc(m.ts.slice(0,16).replace('T',' '))}</span>` : '';
+    return `
+      <div class="rv-msg ${cls}">
+        <div class="rv-msg-head"><span class="rv-msg-label">${label}</span>${ts}</div>
+        <div class="rv-msg-body">${mdToHtml(m.content)}</div>
+      </div>`;
+  }).join('');
+}
+
+async function requestAnalysis(force) {
+  const runId = STATE.selectedRunId;
+  if (!runId) return;
+  const status = $('rv-analysis-ai-status');
+  const btnInit = $('rv-btn-analyze');
+  const btnRegen = $('rv-btn-analyze-regen');
+  btnInit.disabled = true; btnRegen.disabled = true;
+  status.textContent = 'LLM이 분석 중입니다…';
+  try {
+    const token = localStorage.getItem('fa_token');
+    const url = `/review/api/runs/${runId}/analyze${force ? '?force=true' : ''}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '분석 실패');
+    }
+    const { thread, cached } = await res.json();
+    renderThread(thread || []);
+    status.textContent = cached ? '저장된 분석을 불러왔습니다.' : '분석을 새로 생성했습니다.';
+  } catch (e) {
+    status.textContent = '오류: ' + e.message;
+  } finally {
+    btnInit.disabled = false; btnRegen.disabled = false;
+  }
+}
+
+async function sendQuestion() {
+  const runId = STATE.selectedRunId;
+  if (!runId) return;
+  const input = $('rv-analysis-ask-input');
+  const q = (input.value || '').trim();
+  if (!q) return;
+  const status = $('rv-analysis-ai-status');
+  const btn = $('rv-btn-ask');
+  btn.disabled = true; input.disabled = true;
+  status.textContent = 'LLM이 답변 중입니다…';
+  try {
+    const token = localStorage.getItem('fa_token');
+    const res = await fetch(`/review/api/runs/${runId}/analyze/ask`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '질문 전송 실패');
+    }
+    const { thread } = await res.json();
+    renderThread(thread || []);
+    input.value = '';
+    status.textContent = '';
+  } catch (e) {
+    status.textContent = '오류: ' + e.message;
+  } finally {
+    btn.disabled = false; input.disabled = false;
+  }
+}
+
+function fmtPct(v, withSign = false) {
+  if (v == null || Number.isNaN(v)) return '—';
+  const sign = withSign && v > 0 ? '+' : '';
+  return sign + Number(v).toFixed(2) + '%';
+}
+function fmtNum(v) {
+  if (v == null || Number.isNaN(v)) return '—';
+  return Number(v).toFixed(3);
+}
+function ratioVerdict(sharpe) {
+  if (sharpe == null) return '데이터 부족으로 위험 조정 평가 보류.';
+  if (sharpe >= 2) return 'Sharpe ≥ 2 — 위험 대비 매우 우수한 수익 구조.';
+  if (sharpe >= 1) return 'Sharpe ≥ 1 — 위험 대비 양호한 수익.';
+  if (sharpe >= 0) return 'Sharpe < 1 — 위험 대비 수익이 미흡.';
+  return 'Sharpe 음수 — 위험을 감수하고도 손실 발생.';
+}
+
+// 간단한 마크다운 → HTML (## 헤더, **bold**, - 리스트, 단락)
+function mdToHtml(md) {
+  let s = esc(md);
+  s = s.replace(/^### (.+)$/gm, '<h5>$1</h5>');
+  s = s.replace(/^## (.+)$/gm, '<h4>$1</h4>');
+  s = s.replace(/^# (.+)$/gm, '<h3>$1</h3>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // 리스트
+  s = s.replace(/(?:^- .+(?:\n|$))+?/gm, block => {
+    const items = block.trim().split(/\n/).map(l => l.replace(/^- /, '').trim());
+    return '<ul>' + items.map(i => `<li>${i}</li>`).join('') + '</ul>';
+  });
+  // 단락 (빈 줄 기준)
+  s = s.split(/\n{2,}/).map(p => /^<(h\d|ul|li|p)/.test(p.trim()) ? p : `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
+  return s;
 }
 
 // ── 드로어 / 모달 ─────────────────────────────────────

@@ -104,6 +104,35 @@ def get_resume_info(run_id: str) -> Optional[dict]:
     }
 
 
+def get_analysis_thread(run_id: str) -> Optional[list]:
+    """저장된 AI 분석 스레드(메시지 배열) 반환. run 없으면 None, 비어 있으면 []."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT analysis_thread FROM runs WHERE id=%s", (run_id,))
+            row = cur.fetchone()
+    if not row:
+        return None
+    return row[0] or []
+
+
+def append_analysis_message(run_id: str, role: str, content: str) -> None:
+    """스레드 끝에 메시지 한 개를 추가한다(role: 'assistant'|'user')."""
+    import datetime as _dt  # noqa: PLC0415
+    msg = {"role": role, "content": content, "ts": _dt.datetime.utcnow().isoformat() + "Z"}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET analysis_thread = COALESCE(analysis_thread,'[]'::jsonb) || %s::jsonb WHERE id=%s",
+                (json.dumps([msg], ensure_ascii=False), run_id),
+            )
+
+
+def clear_analysis_thread(run_id: str) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE runs SET analysis_thread='[]'::jsonb WHERE id=%s", (run_id,))
+
+
 def list_queued_runs() -> list[dict]:
     """status='queued'로 남은 run들을 등록 순서대로 반환한다(재시작 복구용)."""
     import datetime as _dt  # noqa: PLC0415

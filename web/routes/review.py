@@ -1,10 +1,11 @@
 """리뷰 & 히스토리 라우트 — 백테스트 결과 상세 검토 UI용 API."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 from web import runs_db
@@ -12,6 +13,146 @@ from web.auth import get_current_user
 from web.db import get_conn
 
 router = APIRouter(prefix="/review")
+
+
+# ---------------------------------------------------------------------------
+# AI 종합 분석 (논문 관점) — 헬퍼 + 라우트
+# ---------------------------------------------------------------------------
+
+INITIAL_INSTRUCTION = """
+당신은 멀티모달 금융 트레이딩 에이전트 논문 "A Multimodal Foundation Agent for Financial Trading"(arxiv 2402.18485, 이하 FinAgent 논문)의 평가자입니다.
+위 백테스트 결과를 발표용 종합 분석으로 작성해주세요.
+
+다음 구조를 따라 마크다운으로, 각 섹션은 핵심 5~8줄:
+## 1. 한줄 요약
+## 2. 베이스라인(Buy&Hold) 대비 성과 — α(초과수익)의 의미, 능동매매가 가치를 더했는지
+## 3. 위험 조정 수익 해석 — Sharpe / Sortino / Calmar, MDD 관점
+## 4. 논문 모듈별 추론 — DataFetcher / MarketIntelligence(+Diversified Retrieval) / Low-Level Reflection(Vision) / High-Level Reflection / Decision Making(+Tool-Augmented Signals)
+## 5. 모델 선택의 영향 — 멀티모달(이미지) vs 텍스트 전용. 본 실행 모델이 LLR/HLR의 차트 비전 분석을 활용 가능했는지.
+## 6. 주목할 점·특이점
+## 7. 한계점 — 본 구현이 논문 대비 단순화한 부분, 데이터·모델·평가의 한계 (Google RSS 의존, 단일 종목, 슬리피지·수수료 미고려, 365일 제한 등)
+## 8. 발표 토킹 포인트 — 학문적 관점에서 강조할 핵심 3가지
+
+한국어로 작성해주세요.
+""".strip()
+
+
+def _build_data_context(run: dict, trades: list[tuple]) -> str:
+    res = run.get("result") or {}
+    tr = res.get("total_return_pct")
+    bh = res.get("benchmark_return_pct")
+    alpha = (tr - bh) if (isinstance(tr, (int, float)) and isinstance(bh, (int, float))) else None
+
+    actions: dict[str, int] = {"BUY": 0, "SELL": 0, "HOLD": 0}
+    for _d, a in trades:
+        actions[a] = actions.get(a, 0) + 1
+
+    def fmt(v, suffix="%"):
+        return f"{v:.2f}{suffix}" if isinstance(v, (int, float)) else "—"
+
+    lines = [
+        "# 백테스트 정보",
+        f"- 종목: {run.get('stock_name')} ({run.get('symbol')})",
+        f"- 기간: {run.get('start_date')} ~ {run.get('end_date')}",
+        f"- 초기자본: {float(run.get('initial_cash') or 0):,.0f}원",
+        f"- 트레이더 성향: {run.get('trader_preference')}",
+        f"- LLM 모델: {run.get('model') or run.get('provider') or '기본'}",
+        "",
+        "# 성과 지표",
+        f"- 총 수익률: {fmt(tr)}",
+        f"- 베이스라인(Buy&Hold): {fmt(bh)}",
+        f"- 초과수익(α): {fmt(alpha)}",
+        f"- 연간 환산 수익률: {fmt(res.get('annualized_return_pct'))}",
+        f"- Sharpe Ratio: {fmt(res.get('sharpe_ratio'), '')}",
+        f"- Sortino Ratio: {fmt(res.get('sortino_ratio'), '')}",
+        f"- Calmar Ratio: {fmt(res.get('calmar_ratio'), '')}",
+        f"- 최대 낙폭(MDD): {fmt(res.get('max_drawdown_pct'))}",
+        f"- 연간 변동성: {fmt(res.get('volatility_annual_pct'))}",
+        "",
+        "# 거래 통계",
+        f"- BUY: {actions.get('BUY',0)}회 / SELL: {actions.get('SELL',0)}회 / HOLD: {actions.get('HOLD',0)}회",
+        f"- 총 거래일: {sum(actions.values())}일",
+    ]
+    return "\n".join(lines)
+
+
+def _fetch_trades_simple(run_id: str) -> list[tuple]:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT date, action FROM trades WHERE run_id=%s ORDER BY id", (run_id,))
+            return cur.fetchall()
+
+
+async def _call_llm(messages: list[dict], max_tokens: int) -> str:
+    from finagent.llm.client import LLMClient  # noqa: PLC0415
+    loop = asyncio.get_running_loop()
+    client = LLMClient()
+    return await loop.run_in_executor(None, lambda: client.chat(messages, max_tokens=max_tokens))
+
+
+@router.get("/api/runs/{run_id}/analysis")
+async def get_analysis(run_id: str):
+    thread = runs_db.get_analysis_thread(run_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
+    return {"thread": thread}
+
+
+@router.post("/api/runs/{run_id}/analyze")
+async def analyze_run(
+    run_id: str,
+    current_user: dict = Depends(get_current_user),
+    force: bool = False,
+):
+    run = runs_db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
+    if run.get("status") != "done":
+        raise HTTPException(status_code=400, detail="완료된 백테스트만 분석할 수 있습니다.")
+
+    thread = runs_db.get_analysis_thread(run_id) or []
+    if thread and not force:
+        return {"thread": thread, "cached": True}
+    if force:
+        runs_db.clear_analysis_thread(run_id)
+
+    trades = _fetch_trades_simple(run_id)
+    user_prompt = _build_data_context(run, trades) + "\n\n" + INITIAL_INSTRUCTION
+    reply = await _call_llm([{"role": "user", "content": user_prompt}], max_tokens=2500)
+    runs_db.append_analysis_message(run_id, "assistant", reply)
+    return {"thread": runs_db.get_analysis_thread(run_id), "cached": False}
+
+
+@router.post("/api/runs/{run_id}/analyze/ask")
+async def ask_followup(
+    run_id: str,
+    body: dict = Body(...),
+    current_user: dict = Depends(get_current_user),
+):
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="질문이 비어 있습니다.")
+
+    run = runs_db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
+
+    thread = runs_db.get_analysis_thread(run_id) or []
+    if not thread:
+        raise HTTPException(status_code=400, detail="먼저 AI 종합 분석을 요청해주세요.")
+
+    trades = _fetch_trades_simple(run_id)
+    initial_user = _build_data_context(run, trades) + "\n\n" + INITIAL_INSTRUCTION
+
+    messages: list[dict] = [{"role": "user", "content": initial_user}]
+    for m in thread:
+        messages.append({"role": m["role"], "content": m["content"]})
+    messages.append({"role": "user", "content": question})
+
+    reply = await _call_llm(messages, max_tokens=2000)
+    runs_db.append_analysis_message(run_id, "user", question)
+    runs_db.append_analysis_message(run_id, "assistant", reply)
+    return {"thread": runs_db.get_analysis_thread(run_id)}
 
 
 @router.get("", response_class=HTMLResponse)

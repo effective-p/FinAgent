@@ -127,6 +127,61 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .rv-group-count { margin-left: auto; color: var(--text-muted); font-size: 11px; }
 .rv-group.collapsed .rv-group-items { display: none; }
 .rv-run-item-period-top { font-size: 12px; color: var(--text-muted); }
+
+/* ── 종합 분석 카드 ───────────────────────────────────── */
+.rv-analysis-card { margin-top: 12px; }
+.rv-analysis-body { padding: 4px 2px; }
+.rv-analysis-section { margin: 12px 0 18px; }
+.rv-analysis-section-title {
+  font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.rv-analysis-list { margin: 6px 0 0 20px; padding: 0; }
+.rv-analysis-list li { margin: 4px 0; font-size: 13px; line-height: 1.55; }
+.rv-analysis-list .pos { color: var(--green); }
+.rv-analysis-list .neg { color: var(--red); }
+
+/* AI 스레드 메시지 */
+.rv-analysis-ai-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+.rv-analysis-thread { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.rv-msg { border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+.rv-msg-ai { background: rgba(88,166,255,.06); border-color: rgba(88,166,255,.25); }
+.rv-msg-user { background: var(--bg2); }
+.rv-msg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.rv-msg-label { font-weight: 700; font-size: 12px; color: var(--text); }
+.rv-msg-ts { font-size: 11px; color: var(--text-muted); }
+.rv-msg-body { font-size: 13px; line-height: 1.65; }
+.rv-msg-body h3 { font-size: 15px; margin: 14px 0 6px; }
+.rv-msg-body h4 { font-size: 14px; margin: 12px 0 4px; color: var(--accent); }
+.rv-msg-body h5 { font-size: 13px; margin: 10px 0 4px; }
+.rv-msg-body p { margin: 4px 0; }
+.rv-msg-body ul { margin: 4px 0 4px 18px; padding: 0; }
+.rv-msg-body li { margin: 2px 0; }
+.rv-msg-body strong { color: var(--text); }
+
+/* 버튼 / 입력 폼 */
+.rv-analysis-ai-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.rv-btn-analyze, .rv-btn-analyze-regen, .rv-btn-ask {
+  padding: 6px 14px; font-size: 12px; font-weight: 600;
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 4px; cursor: pointer;
+}
+.rv-btn-analyze-regen { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+.rv-btn-analyze:hover, .rv-btn-ask:hover { background: var(--accent2); }
+.rv-btn-analyze-regen:hover { background: var(--bg2); }
+.rv-btn-analyze:disabled, .rv-btn-analyze-regen:disabled, .rv-btn-ask:disabled { opacity: 0.5; cursor: not-allowed; }
+.rv-analysis-ai-status { font-size: 12px; color: var(--text-muted); }
+.rv-analysis-ask {
+  display: flex; gap: 8px; align-items: stretch;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+}
+.rv-analysis-ask-input {
+  flex: 1; min-height: 60px; resize: vertical;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px; font-size: 13px; font-family: inherit;
+}
+.rv-analysis-ask-input:focus { outline: none; border-color: var(--accent); }
 .rv-run-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 .rv-run-item {
