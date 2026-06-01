@@ -76,10 +76,12 @@ CREATE TABLE IF NOT EXISTS runs (
     result_json       TEXT,
     error_msg         TEXT,
     analysis_thread   JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at        TIMESTAMPTZ DEFAULT NOW()
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    finished_at       TIMESTAMPTZ
 );
 -- 기존 DB 마이그레이션
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS analysis_thread JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS memory (
     id         TEXT PRIMARY KEY,

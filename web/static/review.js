@@ -293,6 +293,13 @@ function renderDetail(run) {
   $('rv-d-period').textContent = `📅 ${run.start_date} ~ ${run.end_date}`;
   $('rv-d-cash').textContent = `💰 ${fmt0(run.initial_cash)}원`;
   $('rv-d-pref').textContent = `🎯 ${prefLabel(run.trader_preference)}`;
+  $('rv-d-author').textContent = run.username ? `👤 ${run.username}` : '';
+  $('rv-d-created').textContent = formatRuntime(run.created_at, run.finished_at);
+  const runid = $('rv-d-runid');
+  if (runid) {
+    runid.textContent = '#' + String(run.id).slice(0, 8);
+    runid.title = run.id;
+  }
   renderKPI(run.result || {});
 
   const resumeBtn = $('rv-btn-resume');
@@ -306,17 +313,31 @@ function renderDetail(run) {
     resumeBtn.style.display = 'none';
   }
 
+  // 삭제: 본인 여부 무관하게 활성 (요청에 따라)
   const deleteBtn = $('rv-btn-delete');
   deleteBtn.style.display = '';
-  deleteBtn.disabled = !isOwner;
+  deleteBtn.disabled = false;
   const queued = run.status === 'queued';
   deleteBtn.textContent = queued ? '⏏ 실행 대기 취소' : '🗑 삭제';
-  deleteBtn.title = isOwner
-    ? (queued ? '대기열에서 제거합니다.' : '')
-    : '본인의 실행만 삭제할 수 있습니다.';
-  deleteBtn.onclick = isOwner
-    ? () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date, queued)
-    : null;
+  deleteBtn.title = queued ? '대기열에서 제거합니다.' : '';
+  deleteBtn.onclick = () => deleteRun(run.id, run.stock_name, run.start_date, run.end_date, queued);
+}
+
+function formatRuntime(startIso, endIso) {
+  if (!startIso) return '';
+  const start = new Date(startIso);
+  const end = endIso ? new Date(endIso) : null;
+  const fmt = d => {
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${d.getFullYear()}-${mo}-${day} ${hh}:${mm}`;
+  };
+  if (!end) return `🗓️ ${fmt(start)} ~ (진행중)`;
+  const mins = Math.max(1, Math.round((end - start) / 60000));
+  const dur = mins >= 60 ? `${Math.floor(mins / 60)}시간 ${mins % 60}분` : `${mins}분`;
+  return `🗓️ ${fmt(start)} ~ ${fmt(end)} (소요 ${dur})`;
 }
 
 async function deleteRun(runId, stockName, startDate, endDate, queued) {

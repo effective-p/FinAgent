@@ -120,9 +120,9 @@ class LLMClient:
             return result
 
         if self.provider == "anthropic":
+            # Claude 4.x(예: claude-opus-4-8)는 temperature 파라미터를 더 이상 받지 않아 생략
             resp = self._client.messages.create(
-                model=self.model, max_tokens=max_tokens,
-                temperature=self.temperature, messages=messages,
+                model=self.model, max_tokens=max_tokens, messages=messages,
             )
             result = resp.content[0].text
             record_chat(messages, result, self.model, self.temperature)
@@ -151,9 +151,9 @@ class LLMClient:
                     {"type": "text", "text": prompt},
                 ],
             }]
+            # Claude 4.x는 temperature 미지원 — 생략
             resp = self._client.messages.create(
-                model=self.model, max_tokens=max_tokens,
-                temperature=self.temperature, messages=messages,
+                model=self.model, max_tokens=max_tokens, messages=messages,
             )
             result = resp.content[0].text
             record_image_chat(prompt, result, self.model, self.temperature)

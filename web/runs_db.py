@@ -41,7 +41,7 @@ def update_run_done(run_id: str, result: dict) -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE runs SET status='done', result_json=%s WHERE id=%s",
+                "UPDATE runs SET status='done', result_json=%s, finished_at=NOW() WHERE id=%s",
                 (json.dumps(result, ensure_ascii=False), run_id),
             )
 
@@ -50,7 +50,7 @@ def update_run_error(run_id: str, error: str) -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE runs SET status='error', error_msg=%s WHERE id=%s",
+                "UPDATE runs SET status='error', error_msg=%s, finished_at=NOW() WHERE id=%s",
                 (error, run_id),
             )
 

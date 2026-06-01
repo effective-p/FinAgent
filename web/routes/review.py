@@ -321,8 +321,6 @@ async def delete_run(run_id: str, current_user: dict = Depends(get_current_user)
     run = runs_db.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
-    if run.get("user_id") != current_user["id"]:
-        raise HTTPException(status_code=403, detail="본인의 실행만 삭제할 수 있습니다.")
     runs_db.delete_run(run_id)
     job_dir = os.path.join("job_data", run_id)
     if os.path.isdir(job_dir):
