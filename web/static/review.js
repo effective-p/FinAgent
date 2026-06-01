@@ -216,6 +216,15 @@ function bindEvents() {
     icon.style.transform = hidden ? '' : 'rotate(-90deg)';
   });
 
+  // 일별 거래 내역 카드 — 접기/펼치기
+  $('rv-day-toggle').addEventListener('click', () => {
+    const body = $('rv-day-body');
+    const icon = $('rv-day-toggle').querySelector('.rv-toggle-icon');
+    const hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    icon.style.transform = hidden ? '' : 'rotate(-90deg)';
+  });
+
   // 종합 분석 카드 — 토글 + AI 버튼들
   $('rv-analysis-toggle').addEventListener('click', () => {
     const body = $('rv-analysis-body');
@@ -315,6 +324,9 @@ function renderDetail(run) {
   $('rv-d-pref').textContent = `🎯 ${prefLabel(run.trader_preference)}`;
   $('rv-d-author').textContent = run.username ? `👤 ${run.username}` : '';
   $('rv-d-created').textContent = formatRuntime(run.created_at, run.finished_at);
+  $('rv-d-model').textContent = run.model
+    ? `🤖 ${run.model}`
+    : (run.provider ? `🤖 ${run.provider}` : '');
   const runid = $('rv-d-runid');
   if (runid) {
     runid.textContent = '#' + String(run.id).slice(0, 8);
@@ -430,15 +442,17 @@ function prefLabel(p) {
 function renderKPI(res) {
   const grid = $('rv-kpi-grid');
   grid.innerHTML = '';
+  // 상단 4개: 수익·리스크 절대값 (베이스라인 비교 한 줄에)
+  // 하단 4개: 위험 조정·통계 지표 한 줄
   const kpis = [
     { label: '총 수익률', key: 'total_return_pct', fmt: pct, sign: true },
     { label: '연간 수익률', key: 'annualized_return_pct', fmt: pct, sign: true },
+    { label: 'B&H 초과수익', key: '_excess', fmt: pct, sign: true },
+    { label: '최대 낙폭 MDD', key: 'max_drawdown_pct', fmt: pct, sign: true },
     { label: 'Sharpe Ratio', key: 'sharpe_ratio', fmt: v => v.toFixed(3) },
     { label: 'Sortino Ratio', key: 'sortino_ratio', fmt: v => v.toFixed(3) },
     { label: 'Calmar Ratio', key: 'calmar_ratio', fmt: v => v.toFixed(3) },
-    { label: '최대 낙폭 MDD', key: 'max_drawdown_pct', fmt: pct, sign: true },
     { label: '연간 변동성', key: 'volatility_annual_pct', fmt: v => v.toFixed(2) + '%' },
-    { label: 'B&H 초과수익', key: '_excess', fmt: pct, sign: true },
   ];
 
   kpis.forEach(k => {
@@ -493,7 +507,7 @@ function renderDayTable() {
       <td><span class="rv-action-badge ${d.action}">${d.action}</span></td>
       <td style="white-space:nowrap">${fmt0(d.price)}원</td>
       <td>${d.quantity > 0 ? Math.round(d.quantity) + '주' : '—'}</td>
-      <td class="rv-reasoning">${esc((d.reasoning || '').slice(0, 120))}${(d.reasoning || '').length > 120 ? '…' : ''}</td>
+      <td class="rv-reasoning">${(() => { const r = cleanReasoning(d.reasoning); return esc(r.slice(0, 120)) + (r.length > 120 ? '…' : ''); })()}</td>
       <td>${traceBtn}</td>
     </tr>`;
   }).join('');
@@ -615,16 +629,16 @@ function buildStepBody(key, data, runId, dateStr) {
 
   if (key === 'low_level_reflection') {
     const out = data.output || {};
-    parts.push(section('단기 분석 (1-5일)', out.short_term_reasoning));
-    parts.push(section('중기 분석 (1-4주)', out.medium_term_reasoning));
-    parts.push(section('장기 분석 (1-3개월)', out.long_term_reasoning));
+    parts.push(section('단기 분석 (1-5일)', cleanReasoning(out.short_term_reasoning)));
+    parts.push(section('중기 분석 (1-4주)', cleanReasoning(out.medium_term_reasoning)));
+    parts.push(section('장기 분석 (1-3개월)', cleanReasoning(out.long_term_reasoning)));
   }
 
   if (key === 'high_level_reflection') {
     const out = data.output || {};
-    parts.push(section('과거 결정 평가', out.reasoning));
-    parts.push(section('개선 방안', out.improvement));
-    parts.push(section('핵심 요약 (메모리 저장)', out.summary));
+    parts.push(section('과거 결정 평가', cleanReasoning(out.reasoning)));
+    parts.push(section('개선 방안', cleanReasoning(out.improvement)));
+    parts.push(section('핵심 요약 (메모리 저장)', cleanReasoning(out.summary)));
   }
 
   if (key === 'decision_making') {
@@ -647,8 +661,8 @@ function buildStepBody(key, data, runId, dateStr) {
       </div></div>`);
 
     const out = data.output || {};
-    if (out.analysis) parts.push(section('단계별 분석', out.analysis));
-    parts.push(section('결정 근거', out.reasoning));
+    if (out.analysis) parts.push(section('단계별 분석', cleanReasoning(out.analysis)));
+    parts.push(section('결정 근거', cleanReasoning(out.reasoning)));
 
     if (out.action) {
       const ac = out.action;
@@ -1271,6 +1285,18 @@ function openDrawer()  { drawer.classList.add('open');   drawerOverlay.classList
 function closeDrawer() { drawer.classList.remove('open'); drawerOverlay.classList.remove('open'); }
 function openModal()   { modal.classList.add('open');    modalOverlay.classList.add('open'); }
 function closeModal()  { modal.classList.remove('open'); modalOverlay.classList.remove('open'); }
+
+// LLM이 XML 형식으로 출력한 reasoning에서 태그를 벗겨 깔끔히 표시
+function cleanReasoning(text) {
+  if (!text) return '';
+  let s = String(text);
+  // <analysis> 블록이 있으면 그 내용만 우선 추출
+  const m = s.match(/<analysis>([\s\S]*?)<\/analysis>/i);
+  if (m) s = m[1];
+  // 남은 우리 도메인 태그들 제거
+  s = s.replace(/<\/?(?:output|analysis|reasoning|action|decision|summary|short_term[^>]*|medium_term[^>]*|long_term[^>]*)[^>]*>/gi, '');
+  return s.trim();
+}
 
 // ── 포맷 유틸 ──────────────────────────────────────────
 function esc(str) {

@@ -313,7 +313,7 @@ function handleProgress(data) {
   item.innerHTML = `
     <span class="log-date">${data.date}</span>
     <span class="badge badge-${data.action}">${data.action}</span>
-    <span class="log-reason">${escHtml(data.reasoning)}</span>
+    <span class="log-reason">${escHtml(cleanReasoning(data.reasoning))}</span>
   `;
   logList.appendChild(item);
   logList.scrollTop = logList.scrollHeight;
@@ -407,7 +407,7 @@ function renderTradeTable() {
     tr.innerHTML = `
       <td>${t.date}</td>
       <td><span class="badge badge-${t.action}">${t.action}</span></td>
-      <td class="td-reason">${escHtml(t.reasoning)}</td>
+      <td class="td-reason">${escHtml(cleanReasoning(t.reasoning))}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -559,4 +559,14 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// LLM이 XML 형식으로 출력한 reasoning에서 태그를 벗겨 깔끔히 표시
+function cleanReasoning(text) {
+  if (!text) return '';
+  let s = String(text);
+  const m = s.match(/<analysis>([\s\S]*?)<\/analysis>/i);
+  if (m) s = m[1];
+  s = s.replace(/<\/?(?:output|analysis|reasoning|action|decision|summary|short_term[^>]*|medium_term[^>]*|long_term[^>]*)[^>]*>/gi, '');
+  return s.trim();
 }

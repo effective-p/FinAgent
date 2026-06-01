@@ -112,6 +112,7 @@
             <span id="rv-d-pref"></span>
             <span id="rv-d-author"></span>
             <span id="rv-d-created"></span>
+            <span id="rv-d-model"></span>
           </div>
         </div>
 
@@ -133,22 +134,26 @@
 
         <!-- 거래 내역 -->
         <div class="rv-card">
-          <div class="rv-card-title">일별 거래 내역 — 클릭하면 워크플로우 상세 보기</div>
-          <div class="rv-day-filter">
-            <button class="rv-filter-btn active" data-filter="all">전체</button>
-            <button class="rv-filter-btn" data-filter="BUY">BUY</button>
-            <button class="rv-filter-btn" data-filter="SELL">SELL</button>
-            <button class="rv-filter-btn" data-filter="HOLD">HOLD</button>
+          <div class="rv-card-title rv-collapsible-title" id="rv-day-toggle">
+            일별 거래 내역 — 클릭하면 워크플로우 상세 보기 <span class="rv-toggle-icon">▼</span>
           </div>
-          <div class="rv-table-wrap">
-            <table class="rv-table" id="rv-day-table">
-              <thead>
-                <tr>
-                  <th>날짜</th><th>액션</th><th>가격</th><th>수량</th><th>판단 근거</th><th></th>
-                </tr>
-              </thead>
-              <tbody id="rv-day-tbody"></tbody>
-            </table>
+          <div id="rv-day-body">
+            <div class="rv-day-filter">
+              <button class="rv-filter-btn active" data-filter="all">전체</button>
+              <button class="rv-filter-btn" data-filter="BUY">BUY</button>
+              <button class="rv-filter-btn" data-filter="SELL">SELL</button>
+              <button class="rv-filter-btn" data-filter="HOLD">HOLD</button>
+            </div>
+            <div class="rv-table-wrap">
+              <table class="rv-table" id="rv-day-table">
+                <thead>
+                  <tr>
+                    <th>날짜</th><th>액션</th><th>가격</th><th>수량</th><th>판단 근거</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="rv-day-tbody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
