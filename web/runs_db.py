@@ -250,6 +250,7 @@ def delete_run(run_id: str) -> bool:
     """run_id에 해당하는 실행 기록과 관련 데이터를 삭제한다. 성공 시 True 반환."""
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute("DELETE FROM memory WHERE run_id = %s", (run_id,))
             cur.execute("DELETE FROM trades WHERE run_id = %s", (run_id,))
             cur.execute("DELETE FROM portfolio_state WHERE run_id = %s", (run_id,))
             cur.execute("DELETE FROM runs WHERE id = %s", (run_id,))

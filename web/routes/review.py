@@ -15,6 +15,17 @@ from web.db import get_conn
 router = APIRouter(prefix="/review")
 
 
+# 동시 LLM 호출 직렬화용 lock 맵. 같은 run_id / compare-key 에 대해 race-condition 방지
+_analysis_locks: dict[str, asyncio.Lock] = {}
+
+def _lock_for(key: str) -> asyncio.Lock:
+    lock = _analysis_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _analysis_locks[key] = lock
+    return lock
+
+
 # ---------------------------------------------------------------------------
 # AI 종합 분석 (논문 관점) — 헬퍼 + 라우트
 # ---------------------------------------------------------------------------
@@ -144,17 +155,18 @@ async def analyze_run(
     if run.get("status") != "done":
         raise HTTPException(status_code=400, detail="완료된 백테스트만 분석할 수 있습니다.")
 
-    thread = runs_db.get_analysis_thread(run_id) or []
-    if thread and not force:
-        return {"thread": thread, "cached": True}
-    if force:
-        runs_db.clear_analysis_thread(run_id)
+    async with _lock_for(f"run:{run_id}"):
+        thread = runs_db.get_analysis_thread(run_id) or []
+        if thread and not force:
+            return {"thread": thread, "cached": True}
+        if force:
+            runs_db.clear_analysis_thread(run_id)
 
-    trades = _fetch_trades_simple(run_id)
-    user_prompt = _build_data_context(run, trades) + "\n\n" + INITIAL_INSTRUCTION
-    reply = await _call_llm([{"role": "user", "content": user_prompt}], max_tokens=2500)
-    runs_db.append_analysis_message(run_id, "assistant", reply)
-    return {"thread": runs_db.get_analysis_thread(run_id), "cached": False}
+        trades = _fetch_trades_simple(run_id)
+        user_prompt = _build_data_context(run, trades) + "\n\n" + INITIAL_INSTRUCTION
+        reply = await _call_llm([{"role": "user", "content": user_prompt}], max_tokens=2500)
+        runs_db.append_analysis_message(run_id, "assistant", reply)
+        return {"thread": runs_db.get_analysis_thread(run_id), "cached": False}
 
 
 @router.post("/api/runs/{run_id}/analyze/ask")
@@ -171,22 +183,23 @@ async def ask_followup(
     if not run:
         raise HTTPException(status_code=404, detail="Run을 찾을 수 없습니다.")
 
-    thread = runs_db.get_analysis_thread(run_id) or []
-    if not thread:
-        raise HTTPException(status_code=400, detail="먼저 AI 종합 분석을 요청해주세요.")
+    async with _lock_for(f"run:{run_id}"):
+        thread = runs_db.get_analysis_thread(run_id) or []
+        if not thread:
+            raise HTTPException(status_code=400, detail="먼저 AI 종합 분석을 요청해주세요.")
 
-    trades = _fetch_trades_simple(run_id)
-    initial_user = _build_data_context(run, trades) + "\n\n" + INITIAL_INSTRUCTION
+        trades = _fetch_trades_simple(run_id)
+        initial_user = _build_data_context(run, trades) + "\n\n" + INITIAL_INSTRUCTION
 
-    messages: list[dict] = [{"role": "user", "content": initial_user}]
-    for m in thread:
-        messages.append({"role": m["role"], "content": m["content"]})
-    messages.append({"role": "user", "content": question})
+        messages: list[dict] = [{"role": "user", "content": initial_user}]
+        for m in thread:
+            messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": question})
 
-    reply = await _call_llm(messages, max_tokens=2000)
-    runs_db.append_analysis_message(run_id, "user", question)
-    runs_db.append_analysis_message(run_id, "assistant", reply)
-    return {"thread": runs_db.get_analysis_thread(run_id)}
+        reply = await _call_llm(messages, max_tokens=2000)
+        runs_db.append_analysis_message(run_id, "user", question)
+        runs_db.append_analysis_message(run_id, "assistant", reply)
+        return {"thread": runs_db.get_analysis_thread(run_id)}
 
 
 # ---------------------------------------------------------------------------
@@ -249,16 +262,17 @@ async def analyze_compare(
     force = bool(body.get("force"))
     run_ids, runs = _resolve_compare_runs(ids_csv)
 
-    thread = runs_db.get_comparison_thread(run_ids)
-    if thread and not force:
-        return {"thread": thread, "cached": True}
-    if force:
-        runs_db.clear_comparison_thread(run_ids)
+    async with _lock_for(f"cmp:{runs_db.compare_key(run_ids)}"):
+        thread = runs_db.get_comparison_thread(run_ids)
+        if thread and not force:
+            return {"thread": thread, "cached": True}
+        if force:
+            runs_db.clear_comparison_thread(run_ids)
 
-    user_prompt = _build_compare_context(runs) + "\n\n" + COMPARE_INSTRUCTION
-    reply = await _call_llm([{"role": "user", "content": user_prompt}], max_tokens=3000)
-    runs_db.append_comparison_message(run_ids, "assistant", reply, prompt=user_prompt)
-    return {"thread": runs_db.get_comparison_thread(run_ids), "cached": False}
+        user_prompt = _build_compare_context(runs) + "\n\n" + COMPARE_INSTRUCTION
+        reply = await _call_llm([{"role": "user", "content": user_prompt}], max_tokens=3000)
+        runs_db.append_comparison_message(run_ids, "assistant", reply, prompt=user_prompt)
+        return {"thread": runs_db.get_comparison_thread(run_ids), "cached": False}
 
 
 @router.post("/api/compare/analyze/ask")
@@ -272,22 +286,23 @@ async def ask_compare_followup(
         raise HTTPException(status_code=400, detail="질문이 비어 있습니다.")
     run_ids, runs = _resolve_compare_runs(ids_csv)
 
-    thread = runs_db.get_comparison_thread(run_ids)
-    if not thread:
-        raise HTTPException(status_code=400, detail="먼저 비교 종합 분석을 요청해주세요.")
+    async with _lock_for(f"cmp:{runs_db.compare_key(run_ids)}"):
+        thread = runs_db.get_comparison_thread(run_ids)
+        if not thread:
+            raise HTTPException(status_code=400, detail="먼저 비교 종합 분석을 요청해주세요.")
 
-    initial_user = _build_compare_context(runs) + "\n\n" + COMPARE_INSTRUCTION
-    messages: list[dict] = [{"role": "user", "content": initial_user}]
-    for m in thread:
-        messages.append({"role": m["role"], "content": m["content"]})
-    messages.append({"role": "user", "content": question})
+        initial_user = _build_compare_context(runs) + "\n\n" + COMPARE_INSTRUCTION
+        messages: list[dict] = [{"role": "user", "content": initial_user}]
+        for m in thread:
+            messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": question})
 
-    reply = await _call_llm(messages, max_tokens=2000)
-    # follow-up assistant 메시지의 prompt 는 직전까지 누적된 전체 messages 직렬화 결과
-    full_prompt = "\n\n---\n\n".join(f"[{m['role']}]\n{m['content']}" for m in messages)
-    runs_db.append_comparison_message(run_ids, "user", question)
-    runs_db.append_comparison_message(run_ids, "assistant", reply, prompt=full_prompt)
-    return {"thread": runs_db.get_comparison_thread(run_ids)}
+        reply = await _call_llm(messages, max_tokens=2000)
+        # follow-up assistant 메시지의 prompt 는 직전까지 누적된 전체 messages 직렬화 결과
+        full_prompt = "\n\n---\n\n".join(f"[{m['role']}]\n{m['content']}" for m in messages)
+        runs_db.append_comparison_message(run_ids, "user", question)
+        runs_db.append_comparison_message(run_ids, "assistant", reply, prompt=full_prompt)
+        return {"thread": runs_db.get_comparison_thread(run_ids)}
 
 
 @router.get("", response_class=HTMLResponse)

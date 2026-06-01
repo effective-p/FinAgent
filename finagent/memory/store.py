@@ -39,7 +39,7 @@ class MemoryStore:
 
     def add(self, collection: str, text: str, metadata: Dict[str, Any]) -> None:
         self._validate(collection)
-        doc_id = _make_id(metadata, text)
+        doc_id = _make_id(self.run_id, metadata, text)
         vec = _embed(text)
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -109,8 +109,11 @@ class MemoryStore:
             raise ValueError(f"Unknown collection '{name}'. Valid: {_COLLECTIONS}")
 
 
-def _make_id(metadata: Dict[str, Any], text: str) -> str:
+def _make_id(run_id: str, metadata: Dict[str, Any], text: str) -> str:
+    # run_id 접두로 cross-run PK 충돌 방지 (동일 종목·날짜·유사 텍스트가 다른 run에서 발생할 때
+    # ON CONFLICT DO UPDATE 가 다른 run 의 데이터를 덮어쓰는 문제 해결)
+    run_prefix = str(run_id)[:8]
     symbol = str(metadata.get("symbol", "unknown"))
     date_str = str(metadata.get("date", "unknown"))
     text_hash = hashlib.sha1(text.encode()).hexdigest()[:8]
-    return f"{symbol}_{date_str}_{text_hash}"
+    return f"{run_prefix}_{symbol}_{date_str}_{text_hash}"

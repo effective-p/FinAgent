@@ -332,7 +332,7 @@ function renderDetail(run) {
     runid.textContent = '#' + String(run.id).slice(0, 8);
     runid.title = run.id;
   }
-  renderKPI(run.result || {});
+  renderKPI(run.result || {}, run.initial_cash);
 
   const resumeBtn = $('rv-btn-resume');
   if (run.status === 'error' || run.status === 'running') {
@@ -439,7 +439,74 @@ function prefLabel(p) {
   return { aggressive: '공격적', moderate: '중립', conservative: '보수적' }[p] || p;
 }
 
-function renderKPI(res) {
+// metrics.py(논문 §5.2)와 1:1 일치하는 풀이를 만든다. 최종값은 backend 값 그대로.
+function evalKpiBreakdown(key, res, initial) {
+  if (!res || initial == null) return '';
+  const TRADING = 252;
+  const sqrt252 = Math.sqrt(TRADING);
+  const wonF = v => Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 0 });
+  const f2 = v => Number(v).toFixed(2);
+  const f3 = v => Number(v).toFixed(3);
+  const f4 = v => Number(v).toFixed(4);
+
+  const final = res.final_value;
+  const n = res.n_trading_days;
+
+  if (key === 'total_return_pct' && final != null) {
+    return `\n\n풀이:\nfinal = ${wonF(final)}원,  initial = ${wonF(initial)}원\n= (${wonF(final)} − ${wonF(initial)}) / ${wonF(initial)} × 100\n= ${f2(res.total_return_pct)}%`;
+  }
+  if (key === 'annualized_return_pct' && final != null && n) {
+    const years = n / TRADING;
+    return `\n\n풀이:\nn_days = ${n},  years = ${n}/252 = ${f3(years)}\n= (${wonF(final)}/${wonF(initial)})^(1/${f3(years)}) − 1\n= ${f2(res.annualized_return_pct)}%`;
+  }
+  if (key === '_excess' && res.total_return_pct != null && res.benchmark_return_pct != null) {
+    return `\n\n풀이:\n전략 ${f2(res.total_return_pct)}% − B&H ${f2(res.benchmark_return_pct)}%\n= ${f2(res.total_return_pct - res.benchmark_return_pct)}%`;
+  }
+  if (key === 'calmar_ratio' && res.annualized_return_pct != null && res.max_drawdown_pct) {
+    return `\n\n풀이:\nannualized = ${f2(res.annualized_return_pct)}%,  |MDD| = ${f2(Math.abs(res.max_drawdown_pct))}%\n= ${f2(res.annualized_return_pct)} / ${f2(Math.abs(res.max_drawdown_pct))}\n= ${f3(res.calmar_ratio)}`;
+  }
+
+  // equity_curve 기반 (Sharpe / Sortino / 변동성 / MDD)
+  const eq = res.equity_curve || [];
+  if (eq.length < 2) return '';
+  const v = eq.map(p => p.value);
+  const dr = [];
+  for (let i = 1; i < v.length; i++) dr.push(v[i] / v[i-1] - 1);
+
+  if (key === 'volatility_annual_pct') {
+    const m = dr.reduce((a, b) => a + b, 0) / dr.length;
+    const sd = Math.sqrt(dr.reduce((a, b) => a + (b - m) ** 2, 0) / dr.length);
+    return `\n\n풀이:\nN = ${dr.length}일치 일일 수익률\nσ_daily = ${f4(sd*100)}%\n= σ × √252 × 100\n= ${f4(sd*100)} × ${f3(sqrt252)}\n= ${f2(res.volatility_annual_pct)}%`;
+  }
+  if (key === 'sharpe_ratio') {
+    const rfDaily = Math.pow(1.03, 1/TRADING) - 1;
+    const ex = dr.map(r => r - rfDaily);
+    const m = ex.reduce((a, b) => a + b, 0) / ex.length;
+    const sd = Math.sqrt(ex.reduce((a, b) => a + (b - m) ** 2, 0) / ex.length);
+    return `\n\n풀이:\nrf_daily = 1.03^(1/252) − 1 = ${f4(rfDaily*100)}%\nexcess_mean = ${f4(m*100)}%,  excess_σ = ${f4(sd*100)}%\n= ${f4(m*100)} / ${f4(sd*100)} × √252\n= ${f3(res.sharpe_ratio)}`;
+  }
+  if (key === 'sortino_ratio' && res.annualized_return_pct != null) {
+    const rfDaily = Math.pow(1.03, 1/TRADING) - 1;
+    const neg = dr.filter(r => r < rfDaily);
+    if (!neg.length) return '\n\n풀이: rf 이하 손실일 없음 → 정의되지 않음';
+    const m = neg.reduce((a, b) => a + b, 0) / neg.length;
+    const sd = Math.sqrt(neg.reduce((a, b) => a + (b - m) ** 2, 0) / neg.length);
+    const downAnnual = sd * sqrt252 * 100;
+    return `\n\n풀이:\nN_손실일 = ${neg.length} (daily_ret < rf_daily)\ndownside_σ_daily = ${f4(sd*100)}%\ndownside_annual = σ × √252 × 100 = ${f2(downAnnual)}%\n= annualized / downside_annual\n= ${f2(res.annualized_return_pct)} / ${f2(downAnnual)}\n= ${f3(res.sortino_ratio)}`;
+  }
+  if (key === 'max_drawdown_pct') {
+    let peak = v[0], minDd = 0, troughDate = '';
+    for (let i = 0; i < v.length; i++) {
+      if (v[i] > peak) peak = v[i];
+      const d = (v[i] - peak) / peak;
+      if (d < minDd) { minDd = d; troughDate = eq[i].date; }
+    }
+    return `\n\n풀이:\n최저 drawdown 발생: ${troughDate}\n= (equity − cummax(equity)) / cummax(equity) × 100\n= ${f2(res.max_drawdown_pct)}%`;
+  }
+  return '';
+}
+
+function renderKPI(res, initial_cash) {
   const grid = $('rv-kpi-grid');
   grid.innerHTML = '';
   // 상단 4개: 수익·리스크 절대값 (베이스라인 비교 한 줄에)
@@ -475,7 +542,13 @@ function renderKPI(res) {
     const cls = val == null ? 'neutral' : (k.sign && val > 0 ? 'pos' : k.sign && val < 0 ? 'neg' : 'neutral');
     const card = document.createElement('div');
     card.className = 'rv-kpi-card';
-    const help = k.tip ? `<span class="rv-kpi-help" data-tip="${esc(k.tip)}">?</span>` : '';
+    let tip = '';
+    if (k.tip) {
+      tip = k.tip;
+      const bd = evalKpiBreakdown(k.key, res, initial_cash);
+      if (bd) tip += bd;
+    }
+    const help = tip ? `<span class="rv-kpi-help" data-tip="${esc(tip)}">?</span>` : '';
     card.innerHTML = `<div class="rv-kpi-label">${k.label}${help}</div><div class="rv-kpi-value ${cls}">${valStr}</div>`;
     grid.appendChild(card);
   });

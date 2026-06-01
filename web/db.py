@@ -11,12 +11,20 @@ _pool: pg_pool.ThreadedConnectionPool | None = None
 
 
 def _dsn() -> str:
+    host = os.environ.get("PG_HOST")
+    pw = os.environ.get("PG_PASSWORD")
+    missing = [k for k, v in (("PG_HOST", host), ("PG_PASSWORD", pw)) if not v]
+    if missing:
+        raise RuntimeError(
+            f"필수 환경변수가 설정되지 않았습니다: {', '.join(missing)}. "
+            f".env 파일을 확인하거나 run_web.py 로 시작했는지 확인하세요."
+        )
     return (
-        f"host={os.environ['PG_HOST']} "
+        f"host={host} "
         f"port={os.environ.get('PG_PORT', '5433')} "
         f"dbname={os.environ.get('PG_DBNAME', 'finagent')} "
         f"user={os.environ.get('PG_USER', 'postgres')} "
-        f"password={os.environ['PG_PASSWORD']}"
+        f"password={pw}"
     )
 
 

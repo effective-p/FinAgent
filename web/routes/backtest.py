@@ -204,7 +204,6 @@ async def resume_backtest(run_id: str, current_user: dict = Depends(get_current_
             llm_cfg = {"provider": _row[0], "model": _row[1], "api_key": _row[2] or None, "base_url": _row[3]}
 
     job = create_job()
-    runs_db.update_run_running(run_id)
 
     loop = asyncio.get_event_loop()
     progress_cb = _make_progress_callback(job, loop)
@@ -218,6 +217,9 @@ async def resume_backtest(run_id: str, current_user: dict = Depends(get_current_
             job.events.append(wait_event)
             job.queue.put_nowait(wait_event)
         async with slot:
+            # DB의 status='running' 표시는 실제 실행 직전에 — 슬롯 획득 전에 set 하면
+            # 다른 작업이 슬롯을 점유한 동안 false-running 상태가 길어진다.
+            runs_db.update_run_running(run_id)
             job.status = "running"
             try:
                 run_backtest = _get_run_backtest()
