@@ -148,11 +148,15 @@ def get_comparison_thread(run_ids: list[str]) -> list:
     return row[0] if row else []
 
 
-def append_comparison_message(run_ids: list[str], role: str, content: str) -> None:
-    """비교 스레드에 메시지 추가. 없으면 생성."""
+def append_comparison_message(
+    run_ids: list[str], role: str, content: str, prompt: Optional[str] = None
+) -> None:
+    """비교 스레드에 메시지 추가. 없으면 생성. prompt가 있으면 함께 저장(투명성용)."""
     import datetime as _dt  # noqa: PLC0415
     key = compare_key(run_ids)
-    msg = {"role": role, "content": content, "ts": _dt.datetime.utcnow().isoformat() + "Z"}
+    msg: dict = {"role": role, "content": content, "ts": _dt.datetime.utcnow().isoformat() + "Z"}
+    if prompt is not None:
+        msg["prompt"] = prompt
     msg_json = json.dumps([msg], ensure_ascii=False)
     with get_conn() as conn:
         with conn.cursor() as cur:

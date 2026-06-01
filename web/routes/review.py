@@ -257,7 +257,7 @@ async def analyze_compare(
 
     user_prompt = _build_compare_context(runs) + "\n\n" + COMPARE_INSTRUCTION
     reply = await _call_llm([{"role": "user", "content": user_prompt}], max_tokens=3000)
-    runs_db.append_comparison_message(run_ids, "assistant", reply)
+    runs_db.append_comparison_message(run_ids, "assistant", reply, prompt=user_prompt)
     return {"thread": runs_db.get_comparison_thread(run_ids), "cached": False}
 
 
@@ -283,8 +283,10 @@ async def ask_compare_followup(
     messages.append({"role": "user", "content": question})
 
     reply = await _call_llm(messages, max_tokens=2000)
+    # follow-up assistant 메시지의 prompt 는 직전까지 누적된 전체 messages 직렬화 결과
+    full_prompt = "\n\n---\n\n".join(f"[{m['role']}]\n{m['content']}" for m in messages)
     runs_db.append_comparison_message(run_ids, "user", question)
-    runs_db.append_comparison_message(run_ids, "assistant", reply)
+    runs_db.append_comparison_message(run_ids, "assistant", reply, prompt=full_prompt)
     return {"thread": runs_db.get_comparison_thread(run_ids)}
 
 

@@ -1171,16 +1171,38 @@ function renderCompareThread(thread) {
   btnRegen.style.display = '';
   askArea.style.display = '';
 
-  container.innerHTML = thread.map(m => {
+  STATE.cmpThread = thread;
+  container.innerHTML = thread.map((m, i) => {
     const cls = m.role === 'assistant' ? 'rv-msg-ai' : 'rv-msg-user';
     const label = m.role === 'assistant' ? '🤖 AI' : '🗣️ 의견·질문';
     const ts = m.ts ? `<span class="rv-msg-ts">${esc(m.ts.slice(0,16).replace('T',' '))}</span>` : '';
+    const inspectBtn = m.role === 'assistant' && m.prompt
+      ? `<button class="rv-msg-inspect" data-idx="${i}" title="LLM 호출 프롬프트와 응답을 봅니다">🔍 LLM 호출 보기</button>`
+      : '';
     return `
       <div class="rv-msg ${cls}">
-        <div class="rv-msg-head"><span class="rv-msg-label">${label}</span>${ts}</div>
+        <div class="rv-msg-head"><span class="rv-msg-label">${label}</span>${ts}${inspectBtn}</div>
         <div class="rv-msg-body">${mdToHtml(m.content)}</div>
       </div>`;
   }).join('');
+
+  container.querySelectorAll('.rv-msg-inspect').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx, 10);
+      const m = STATE.cmpThread[idx];
+      if (!m) return;
+      modalTitle.textContent = '🤖 AI 비교 분석 — LLM 호출 상세';
+      modalMeta.innerHTML = `<span>📨 메시지 ${idx + 1}</span>` +
+        (m.ts ? `<span>🕒 ${esc(m.ts.replace('T',' ').slice(0,19))}</span>` : '');
+      modalBody.innerHTML = `
+        <div class="rv-llm-section-title rv-llm-prompt-title">PROMPT</div>
+        <div class="rv-llm-block">${esc(m.prompt || '')}</div>
+        <div class="rv-llm-section-title rv-llm-response-title">RESPONSE</div>
+        <div class="rv-llm-block">${esc(m.content || '')}</div>
+      `;
+      openModal();
+    });
+  });
 }
 
 async function requestCompareAnalysis(force) {
