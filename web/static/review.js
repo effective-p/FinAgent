@@ -445,14 +445,22 @@ function renderKPI(res) {
   // 상단 4개: 수익·리스크 절대값 (베이스라인 비교 한 줄에)
   // 하단 4개: 위험 조정·통계 지표 한 줄
   const kpis = [
-    { label: '총 수익률', key: 'total_return_pct', fmt: pct, sign: true },
-    { label: '연간 수익률', key: 'annualized_return_pct', fmt: pct, sign: true },
-    { label: 'B&H 초과수익', key: '_excess', fmt: pct, sign: true },
-    { label: '최대 낙폭 MDD', key: 'max_drawdown_pct', fmt: pct, sign: true },
-    { label: 'Sharpe Ratio', key: 'sharpe_ratio', fmt: v => v.toFixed(3) },
-    { label: 'Sortino Ratio', key: 'sortino_ratio', fmt: v => v.toFixed(3) },
-    { label: 'Calmar Ratio', key: 'calmar_ratio', fmt: v => v.toFixed(3) },
-    { label: '연간 변동성', key: 'volatility_annual_pct', fmt: v => v.toFixed(2) + '%' },
+    { label: '총 수익률', key: 'total_return_pct', fmt: pct, sign: true,
+      tip: '(final − initial) / initial × 100\n전체 기간 누적 수익률.' },
+    { label: '연간 수익률', key: 'annualized_return_pct', fmt: pct, sign: true,
+      tip: '(final / initial)^(1/years) − 1\nyears = n_days / 252\n연환산(annualized) 수익률.' },
+    { label: 'B&H 초과수익', key: '_excess', fmt: pct, sign: true,
+      tip: 'total_return − benchmark_return\n같은 기간 Buy&Hold 대비 만든 알파(α).' },
+    { label: '최대 낙폭 MDD', key: 'max_drawdown_pct', fmt: pct, sign: true,
+      tip: 'min((equity − cummax(equity)) / cummax(equity))\n자산곡선 최고점 대비 최악의 손실폭.' },
+    { label: 'Sharpe Ratio', key: 'sharpe_ratio', fmt: v => v.toFixed(3),
+      tip: '(E[r] − rf) / σ × √252\nrf = 3%/year\n위험 1단위당 초과수익. ≥1 양호, ≥2 우수.' },
+    { label: 'Sortino Ratio', key: 'sortino_ratio', fmt: v => v.toFixed(3),
+      tip: 'annualized_return / downside_std × 100\n하방 변동성만 페널티로 보는 Sharpe 변형.' },
+    { label: 'Calmar Ratio', key: 'calmar_ratio', fmt: v => v.toFixed(3),
+      tip: 'annualized_return / |MDD|\nMDD 1단위당 연환산 수익.' },
+    { label: '연간 변동성', key: 'volatility_annual_pct', fmt: v => v.toFixed(2) + '%',
+      tip: 'std(daily_returns) × √252 × 100\n수익률의 연환산 표준편차.' },
   ];
 
   kpis.forEach(k => {
@@ -467,7 +475,8 @@ function renderKPI(res) {
     const cls = val == null ? 'neutral' : (k.sign && val > 0 ? 'pos' : k.sign && val < 0 ? 'neg' : 'neutral');
     const card = document.createElement('div');
     card.className = 'rv-kpi-card';
-    card.innerHTML = `<div class="rv-kpi-label">${k.label}</div><div class="rv-kpi-value ${cls}">${valStr}</div>`;
+    const help = k.tip ? `<span class="rv-kpi-help" data-tip="${esc(k.tip)}">?</span>` : '';
+    card.innerHTML = `<div class="rv-kpi-label">${k.label}${help}</div><div class="rv-kpi-value ${cls}">${valStr}</div>`;
     grid.appendChild(card);
   });
 

@@ -284,7 +284,34 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   border-radius: var(--radius);
   padding: 16px;
 }
-.rv-run-detail { display: flex; flex-direction: column; gap: 16px; }
+.rv-run-detail { display: flex; flex-direction: column; gap: 24px; }
+
+/* KPI 카드의 도움말 아이콘 + hover 오버레이 툴팁 */
+.rv-kpi-help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; margin-left: 6px;
+  background: var(--bg3); color: var(--text-muted);
+  border-radius: 50%;
+  font-size: 10px; font-weight: 700; cursor: help;
+  position: relative;
+}
+.rv-kpi-help:hover { background: var(--accent); color: #fff; }
+.rv-kpi-help:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%; left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 8px 12px; border-radius: 6px;
+  font-size: 12px; line-height: 1.55; color: var(--text);
+  white-space: pre-line; max-width: 340px; min-width: 220px;
+  text-align: left;
+  z-index: 200;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  box-shadow: 0 6px 24px rgba(0,0,0,.45);
+  pointer-events: none;
+}
 .rv-card-title {
   font-size: 13px;
   font-weight: 600;
