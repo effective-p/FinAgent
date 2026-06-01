@@ -13,6 +13,15 @@ const STATE = {
   expandedGroups: new Set(),   // 사이드바에서 펼쳐진 종목(symbol) 집합 — 기본은 모두 접힘
 };
 
+// 종목별 시장 구분 (KRX) — 현재 운용 5종목
+const MARKETS = {
+  '005930': 'KOSPI',   // 삼성전자
+  '005380': 'KOSPI',   // 현대차
+  '034020': 'KOSPI',   // 두산에너빌리티
+  '298380': 'KOSDAQ',  // 에이비엘바이오
+  '058470': 'KOSDAQ',  // 리노공업
+};
+
 // ── DOM refs ───────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const runList       = $('rv-run-list');
@@ -83,12 +92,23 @@ function renderRunList() {
   runList.innerHTML = [...groups.entries()].map(([symbol, g]) => {
     const collapsed = !searching && !STATE.expandedGroups.has(symbol);
     const itemsHtml = g.items.map(renderRunItem).join('');
+    const runningCnt = g.items.filter(r => r.status === 'running').length;
+    const queuedCnt  = g.items.filter(r => r.status === 'queued').length;
+    const market = MARKETS[symbol] || '';
+    const marketCls = market === 'KOSPI' ? 'rv-market-kospi' : market === 'KOSDAQ' ? 'rv-market-kosdaq' : '';
+    const activeBadge = runningCnt > 0
+      ? `<span class="rv-group-active running" title="실행중 ${runningCnt}건"><span class="rv-spinner-sm"></span>${runningCnt}</span>`
+      : queuedCnt > 0
+        ? `<span class="rv-group-active queued" title="대기중 ${queuedCnt}건">⏳ ${queuedCnt}</span>`
+        : '';
     return `
       <div class="rv-group ${collapsed ? 'collapsed' : ''}">
         <div class="rv-group-header" data-symbol="${esc(symbol)}">
           <span class="rv-group-arrow">▼</span>
           <span class="rv-group-title">${esc(g.stock_name)}</span>
           <span class="rv-group-symbol">${esc(symbol)}</span>
+          ${market ? `<span class="rv-group-market ${marketCls}">${market}</span>` : ''}
+          ${activeBadge}
           <span class="rv-group-count">${g.items.length}건</span>
         </div>
         <div class="rv-group-items">${itemsHtml}</div>
