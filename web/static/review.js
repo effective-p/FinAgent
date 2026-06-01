@@ -10,7 +10,7 @@ const STATE = {
   compareMode: false,
   selectedCompareIds: new Set(),
   compareChart: null,
-  collapsedGroups: new Set(),  // 사이드바에서 접힌 종목(symbol) 집합
+  expandedGroups: new Set(),   // 사이드바에서 펼쳐진 종목(symbol) 집합 — 기본은 모두 접힘
 };
 
 // ── DOM refs ───────────────────────────────────────────
@@ -81,7 +81,7 @@ function renderRunList() {
   const searching = !!query;
 
   runList.innerHTML = [...groups.entries()].map(([symbol, g]) => {
-    const collapsed = !searching && STATE.collapsedGroups.has(symbol);
+    const collapsed = !searching && !STATE.expandedGroups.has(symbol);
     const itemsHtml = g.items.map(renderRunItem).join('');
     return `
       <div class="rv-group ${collapsed ? 'collapsed' : ''}">
@@ -133,8 +133,8 @@ function bindEvents() {
     const header = e.target.closest('.rv-group-header');
     if (header) {
       const sym = header.dataset.symbol;
-      if (STATE.collapsedGroups.has(sym)) STATE.collapsedGroups.delete(sym);
-      else STATE.collapsedGroups.add(sym);
+      if (STATE.expandedGroups.has(sym)) STATE.expandedGroups.delete(sym);
+      else STATE.expandedGroups.add(sym);
       renderRunList();
       return;
     }
