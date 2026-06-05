@@ -61,10 +61,35 @@
           <div class="rv-table-wrap">
             <table class="rv-table" id="rv-compare-table">
               <thead>
-                <tr><th>종목</th><th>기간</th><th>성향</th><th>총수익</th><th>B&amp;H수익</th><th>초과수익</th></tr>
+                <tr><th>종목</th><th>기간</th><th>모델</th><th>성향</th><th>총수익</th><th>B&amp;H수익</th><th>초과수익</th></tr>
               </thead>
               <tbody></tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- 비교 종합 분석 -->
+        <div class="rv-card rv-analysis-card">
+          <div class="rv-card-title rv-collapsible-title" id="rv-cmp-analysis-toggle">
+            🎓 비교 종합 분석 — 학술 + 투자자 관점 <span class="rv-toggle-icon">▼</span>
+          </div>
+          <div class="rv-analysis-body" id="rv-cmp-analysis-body">
+            <div id="rv-cmp-analysis-static"></div>
+            <div class="rv-analysis-section">
+              <div class="rv-analysis-section-title">🤖 AI 비교 의견 &amp; 토론</div>
+              <div class="rv-analysis-thread" id="rv-cmp-analysis-thread"></div>
+              <div class="rv-analysis-ai-controls" id="rv-cmp-analysis-controls">
+                <button class="rv-btn-analyze" id="rv-btn-cmp-analyze">AI 비교 분석 요청</button>
+                <button class="rv-btn-analyze-regen" id="rv-btn-cmp-analyze-regen" style="display:none">↻ 다시 생성</button>
+                <span id="rv-cmp-analysis-status" class="rv-analysis-ai-status"></span>
+              </div>
+              <div class="rv-analysis-ask" id="rv-cmp-analysis-ask" style="display:none">
+                <textarea id="rv-cmp-ask-input" class="rv-analysis-ask-input"
+                  placeholder="비교 결과에 대한 의견·질문을 추가하면 LLM이 이어서 답변합니다. (Ctrl+Enter 로 보내기)"
+                  rows="3"></textarea>
+                <button class="rv-btn-ask" id="rv-btn-cmp-ask">보내기</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -77,11 +102,17 @@
             <span class="rv-run-stock" id="rv-d-stock"></span>
             <span class="rv-run-symbol" id="rv-d-symbol"></span>
             <span class="rv-run-badge" id="rv-d-status"></span>
+            <button class="rv-btn-resume" id="rv-btn-resume" style="display:none">▶ 이어서 실행</button>
+            <button class="rv-btn-delete" id="rv-btn-delete">🗑 삭제</button>
+            <span class="rv-run-runid" id="rv-d-runid" title="" style="margin-left:auto"></span>
           </div>
           <div class="rv-run-meta">
             <span id="rv-d-period"></span>
             <span id="rv-d-cash"></span>
             <span id="rv-d-pref"></span>
+            <span id="rv-d-author"></span>
+            <span id="rv-d-created"></span>
+            <span id="rv-d-model"></span>
           </div>
         </div>
 
@@ -103,22 +134,26 @@
 
         <!-- 거래 내역 -->
         <div class="rv-card">
-          <div class="rv-card-title">일별 거래 내역 — 클릭하면 워크플로우 상세 보기</div>
-          <div class="rv-day-filter">
-            <button class="rv-filter-btn active" data-filter="all">전체</button>
-            <button class="rv-filter-btn" data-filter="BUY">BUY</button>
-            <button class="rv-filter-btn" data-filter="SELL">SELL</button>
-            <button class="rv-filter-btn" data-filter="HOLD">HOLD</button>
+          <div class="rv-card-title rv-collapsible-title" id="rv-day-toggle">
+            일별 거래 내역 — 클릭하면 워크플로우 상세 보기 <span class="rv-toggle-icon">▼</span>
           </div>
-          <div class="rv-table-wrap">
-            <table class="rv-table" id="rv-day-table">
-              <thead>
-                <tr>
-                  <th>날짜</th><th>액션</th><th>가격</th><th>수량</th><th>판단 근거</th><th></th>
-                </tr>
-              </thead>
-              <tbody id="rv-day-tbody"></tbody>
-            </table>
+          <div id="rv-day-body">
+            <div class="rv-day-filter">
+              <button class="rv-filter-btn active" data-filter="all">전체</button>
+              <button class="rv-filter-btn" data-filter="BUY">BUY</button>
+              <button class="rv-filter-btn" data-filter="SELL">SELL</button>
+              <button class="rv-filter-btn" data-filter="HOLD">HOLD</button>
+            </div>
+            <div class="rv-table-wrap">
+              <table class="rv-table" id="rv-day-table">
+                <thead>
+                  <tr>
+                    <th>날짜</th><th>액션</th><th>가격</th><th>수량</th><th>판단 근거</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="rv-day-tbody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -172,6 +207,36 @@
               <div class="rv-formula-grid">
                 <div class="rv-formula-item"><div class="rv-formula-name">BUY 수량</div><code>qty = int(cash × 0.5 / price) — 가용 현금의 50% 사용</code></div>
                 <div class="rv-formula-item"><div class="rv-formula-name">SELL</div><code>전량 매도: cash += position × price &nbsp;│&nbsp; position = 0</code></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 종합 분석 (논문 관점) -->
+        <div class="rv-card rv-analysis-card">
+          <div class="rv-card-title rv-collapsible-title" id="rv-analysis-toggle">
+            🎓 종합 분석 — 논문(arxiv 2402.18485) 관점 <span class="rv-toggle-icon">▼</span>
+          </div>
+          <div class="rv-analysis-body" id="rv-analysis-body">
+
+            <!-- 데이터 기반 정적 분석 -->
+            <div id="rv-analysis-static"></div>
+
+            <!-- AI 종합 의견 (스레드) -->
+            <div class="rv-analysis-section">
+              <div class="rv-analysis-section-title">🤖 AI 종합 의견 &amp; 토론</div>
+              <div class="rv-analysis-ai-meta" id="rv-analysis-ai-meta"></div>
+              <div class="rv-analysis-thread" id="rv-analysis-thread"></div>
+              <div class="rv-analysis-ai-controls" id="rv-analysis-ai-controls">
+                <button class="rv-btn-analyze" id="rv-btn-analyze">AI 종합 분석 요청</button>
+                <button class="rv-btn-analyze-regen" id="rv-btn-analyze-regen" style="display:none">↻ 다시 생성</button>
+                <span id="rv-analysis-ai-status" class="rv-analysis-ai-status"></span>
+              </div>
+              <div class="rv-analysis-ask" id="rv-analysis-ask" style="display:none">
+                <textarea id="rv-analysis-ask-input" class="rv-analysis-ask-input"
+                  placeholder="이 분석에 대한 의견·질문을 추가하면 LLM이 이어서 답변합니다. (Ctrl+Enter 로 보내기)"
+                  rows="3"></textarea>
+                <button class="rv-btn-ask" id="rv-btn-ask">보내기</button>
               </div>
             </div>
           </div>

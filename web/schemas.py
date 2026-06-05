@@ -14,6 +14,7 @@ class BacktestRequest(BaseModel):
     end: date
     initial_cash: float = 10_000_000
     trader_preference: str = "moderate"
+    llm_config_id: Optional[int] = None
 
     @field_validator("trader_preference")
     @classmethod
@@ -32,6 +33,10 @@ class BacktestRequest(BaseModel):
         if start and (v - start).days > 365:
             raise ValueError("Date range must not exceed 365 days")
         return v
+
+
+class BatchBacktestRequest(BaseModel):
+    items: list[BacktestRequest]
 
 
 class JobCreatedResponse(BaseModel):

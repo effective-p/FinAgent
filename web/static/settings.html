@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinAgent — LLM 설정</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; }
+    .container { max-width: 960px; margin: 0 auto; padding: 32px 20px; }
+    .header { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
+    .header h1 { font-size: 20px; font-weight: 700; }
+    .header a { color: #58a6ff; text-decoration: none; font-size: 13px; }
+    .user-badge { margin-left: auto; background: #21262d; border: 1px solid #30363d;
+      border-radius: 20px; padding: 4px 12px; font-size: 13px; color: #8b949e; }
+    .section { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 24px; margin-bottom: 24px; }
+    .section h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+    input, select {
+      width: 100%; padding: 8px 10px;
+      background: #0d1117; border: 1px solid #30363d;
+      border-radius: 6px; color: #e6edf3; font-size: 13px; outline: none;
+    }
+    input:focus, select:focus { border-color: #58a6ff; }
+    .btn-add {
+      background: #238636; border: none; border-radius: 6px;
+      color: #fff; font-size: 13px; font-weight: 600;
+      padding: 8px 16px; cursor: pointer; margin-top: 4px;
+    }
+    .btn-add:hover { background: #2ea043; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 10px; color: #8b949e; border-bottom: 1px solid #21262d; }
+    td { padding: 8px 10px; border-bottom: 1px solid #21262d; }
+    .btn-del {
+      background: none; border: 1px solid #da3633; border-radius: 4px;
+      color: #da3633; font-size: 12px; padding: 3px 8px; cursor: pointer;
+    }
+    .btn-del:hover { background: #da3633; color: #fff; }
+    .empty { color: #8b949e; font-size: 13px; text-align: center; padding: 20px 0; }
+  </style>
+</head>
+<body>
+ <div class="container">
+  <div class="header">
+    <h1>LLM 설정</h1>
+    <a href="/">&larr; 메인으로</a>
+    <span class="user-badge" id="userBadge">…</span>
+    <a href="#" onclick="logout()" style="color:#f85149;font-size:13px;">로그아웃</a>
+  </div>
+
+  <div class="section">
+    <h2>LLM 추가</h2>
+    <div class="form-row">
+      <div>
+        <label>이름 (구분용)</label>
+        <input id="cfgName" placeholder="예: GPT-4o (개인)">
+      </div>
+      <div>
+        <label>Provider</label>
+        <select id="cfgProvider" onchange="updateModelDefault()">
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="gemini">Gemini</option>
+          <option value="ollama">Ollama (로컬)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>모델 (비우면 기본값)</label>
+        <input id="cfgModel" placeholder="gpt-4o-mini">
+      </div>
+      <div id="apiKeyRow">
+        <label>API Key</label>
+        <input id="cfgApiKey" type="password" placeholder="sk-...">
+      </div>
+    </div>
+    <div id="baseUrlRow" style="display:none;margin-bottom:12px">
+      <label>Ollama URL (기본: http://localhost:11434/v1)</label>
+      <input id="cfgBaseUrl" placeholder="http://localhost:11434/v1">
+    </div>
+    <button class="btn-add" onclick="addConfig()">추가</button>
+  </div>
+
+  <div class="section">
+    <h2>등록된 LLM 설정</h2>
+    <div id="configList"><p class="empty">등록된 설정이 없습니다.</p></div>
+  </div>
+ </div><!-- /.container -->
+
+  <script>
+    const DEFAULTS = { openai: 'gpt-4o-mini', anthropic: 'claude-sonnet-4-6', gemini: 'gemini-2.0-flash', ollama: 'gemma3:latest' };
+
+    function token() { return localStorage.getItem('fa_token'); }
+    function authHeaders() { return { 'Authorization': 'Bearer ' + token(), 'Content-Type': 'application/json' }; }
+
+    function logout() {
+      localStorage.removeItem('fa_token');
+      localStorage.removeItem('fa_user');
+      window.location.href = '/login.html';
+    }
+
+    function updateModelDefault() {
+      const p = document.getElementById('cfgProvider').value;
+      document.getElementById('cfgModel').placeholder = DEFAULTS[p] || '';
+      const isOllama = p === 'ollama';
+      document.getElementById('apiKeyRow').style.display = isOllama ? 'none' : 'block';
+      document.getElementById('baseUrlRow').style.display = isOllama ? 'block' : 'none';
+    }
+
+    async function init() {
+      if (!token()) { window.location.href = '/login.html'; return; }
+      document.getElementById('userBadge').textContent = localStorage.getItem('fa_user') || '';
+      await loadConfigs();
+    }
+
+    async function loadConfigs() {
+      const res = await fetch('/api/llm-configs', { headers: authHeaders() });
+      if (res.status === 401) { window.location.href = '/login.html'; return; }
+      const data = await res.json();
+      const el = document.getElementById('configList');
+      if (!data.length) { el.innerHTML = '<p class="empty">등록된 설정이 없습니다.</p>'; return; }
+      el.innerHTML = `<table>
+        <tr><th>이름</th><th>Provider</th><th>모델</th><th>API Key / URL</th><th></th></tr>
+        ${data.map(c => `<tr>
+          <td>${c.name}</td><td>${c.provider}</td><td>${c.model}</td>
+          <td style="font-family:monospace;font-size:11px">${c.base_url ? c.base_url : c.api_key_hint}</td>
+          <td><button class="btn-del" onclick="deleteConfig(${c.id})">삭제</button></td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    async function addConfig() {
+      const name = document.getElementById('cfgName').value.trim();
+      const provider = document.getElementById('cfgProvider').value;
+      const model = document.getElementById('cfgModel').value.trim() || null;
+      const api_key = provider === 'ollama' ? null : document.getElementById('cfgApiKey').value.trim();
+      const base_url = provider === 'ollama' ? (document.getElementById('cfgBaseUrl').value.trim() || null) : null;
+      if (!name) { alert('이름은 필수입니다.'); return; }
+      if (provider !== 'ollama' && !api_key) { alert('API Key는 필수입니다.'); return; }
+      const res = await fetch('/api/llm-configs', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name, provider, model, api_key, base_url }),
+      });
+      if (!res.ok) { const d = await res.json(); alert(d.detail); return; }
+      document.getElementById('cfgName').value = '';
+      document.getElementById('cfgApiKey').value = '';
+      await loadConfigs();
+    }
+
+    async function deleteConfig(id) {
+      if (!confirm('삭제할까요?')) return;
+      await fetch('/api/llm-configs/' + id, { method: 'DELETE', headers: authHeaders() });
+      await loadConfigs();
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -10,8 +10,18 @@
   <div class="container">
 
     <header>
-      <h1>Fin<span>Agent</span></h1>
-      <p>멀티모달 AI 기반 한국 주식 백테스팅 대시보드</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <h1>Fin<span>Agent</span></h1>
+          <p>멀티모달 AI 기반 한국 주식 백테스팅 대시보드</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;font-size:13px">
+          <span id="nav-user" style="color:#8b949e"></span>
+          <a href="/settings.html" style="color:#58a6ff;text-decoration:none">LLM 설정</a>
+          <a href="/review.html" style="color:#58a6ff;text-decoration:none">결과 비교</a>
+          <a href="#" onclick="navLogout()" style="color:#f85149;text-decoration:none">로그아웃</a>
+        </div>
+      </div>
     </header>
 
     <!-- ── 에러 배너 ── -->
@@ -28,29 +38,28 @@
         <form id="backtest-form">
           <div class="form-grid">
 
-            <div class="form-group">
-              <label for="symbol">종목코드</label>
-              <input id="symbol" name="symbol" type="text"
-                     placeholder="예: 005930" required
-                     pattern="[0-9]{6}" title="6자리 KRX 종목코드" />
-            </div>
-
-            <div class="form-group">
-              <label for="stock_name">종목명 (한글)</label>
-              <input id="stock_name" name="stock_name" type="text"
-                     placeholder="예: 삼성전자" required />
+            <div class="form-group" style="grid-column:1/-1">
+              <label for="stock_select">종목</label>
+              <select id="stock_select" required>
+                <option value="">-- 종목 선택 --</option>
+                <option value="005930|삼성전자">삼성전자 (005930)</option>
+                <option value="298380|에이비엘바이오">에이비엘바이오 (298380)</option>
+                <option value="058470|리노공업">리노공업 (058470)</option>
+                <option value="005380|현대차">현대차 (005380)</option>
+                <option value="034020|두산에너빌리티">두산에너빌리티 (034020)</option>
+              </select>
             </div>
 
             <div class="form-group">
               <label for="start">시작일</label>
               <input id="start" name="start" type="date"
-                     value="2026-01-02" required />
+                     value="2026-03-15" required />
             </div>
 
             <div class="form-group">
               <label for="end">종료일</label>
               <input id="end" name="end" type="date"
-                     required />
+                     value="2026-05-15" required />
             </div>
 
             <div class="form-group">
@@ -68,13 +77,39 @@
               </select>
             </div>
 
+            <div class="form-group" style="grid-column:1/-1">
+              <label for="llm_config_id">LLM 선택 (설정에서 등록 후 선택)</label>
+              <select id="llm_config_id" name="llm_config_id"></select>
+            </div>
+
           </div><!-- /.form-grid -->
 
-          <button type="submit" class="btn" id="submit-btn">
-            백테스트 실행
-          </button>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="submit-btn">
+              백테스트 실행
+            </button>
+            <button type="button" class="btn btn-secondary" id="add-batch-btn">
+              + 목록에 추가
+            </button>
+          </div>
         </form>
       </div><!-- /.card -->
+
+      <!-- ── 일괄 실행 목록 (장바구니) ── -->
+      <div class="card" id="batch-card" style="margin-top:16px">
+        <div class="card-title">
+          일괄 실행 목록 <span id="batch-count" style="font-size:13px;font-weight:400;color:var(--text-muted)">0개</span>
+        </div>
+        <div id="batch-list">
+          <div class="batch-empty">목록이 비어 있습니다. 설정 후 "+ 목록에 추가"를 누르세요.</div>
+        </div>
+        <button type="button" class="btn" id="batch-run-btn" disabled style="margin-top:12px">
+          일괄 실행
+        </button>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
+          담은 순서대로 하나씩 순차 실행됩니다. 실행 후 "결과 비교"에서 진행 상황을 확인하세요.
+        </div>
+      </div>
     </div><!-- /#panel-form -->
 
     <!-- ══════════════════════════════════════════════
@@ -82,7 +117,7 @@
     ══════════════════════════════════════════════ -->
     <div id="panel-progress">
       <div class="card">
-        <div class="card-title">백테스트 진행 중…</div>
+        <div class="card-title">백테스트 진행 중… <span id="progress-run-info" style="font-size:13px;font-weight:400;color:var(--text-muted);margin-left:12px"></span></div>
 
         <!-- ── 파이프라인 Flow ── -->
         <div class="pipeline-scroll-wrap">
@@ -121,7 +156,7 @@
                 <div class="node-icon">&#x1F9E0;</div>
               </div>
               <div class="node-label">Market Intelligence</div>
-              <div class="node-sub">Claude</div>
+              <div class="node-sub llm-label">LLM</div>
             </div>
 
             <div class="pipeline-arrow">&#x2192;</div>
@@ -132,7 +167,7 @@
                 <div class="node-icon">&#x1F916;</div>
               </div>
               <div class="node-label">LLR</div>
-              <div class="node-sub">Claude</div>
+              <div class="node-sub llm-label">LLM</div>
             </div>
 
             <div class="pipeline-arrow">&#x2192;</div>
@@ -143,7 +178,7 @@
                 <div class="node-icon">&#x1F916;</div>
               </div>
               <div class="node-label">HLR</div>
-              <div class="node-sub">Claude</div>
+              <div class="node-sub llm-label">LLM</div>
             </div>
 
             <div class="pipeline-arrow">&#x2192;</div>
@@ -154,7 +189,7 @@
                 <div class="node-icon">&#x26A1;</div>
               </div>
               <div class="node-label">Tool-Augmented Decision</div>
-              <div class="node-sub">Tool · Claude</div>
+              <div class="node-sub llm-label">Tool · LLM</div>
             </div>
 
             <div class="pipeline-arrow">&#x2192;</div>

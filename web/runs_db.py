@@ -1,47 +1,10 @@
-"""백테스트 실행 결과 영구 저장 — SQLite finagent_runs.db."""
+"""백테스트 실행 결과 영구 저장 — PostgreSQL."""
 from __future__ import annotations
 
 import json
-import sqlite3
-from contextlib import contextmanager
-from datetime import datetime
 from typing import Optional
 
-_DB_PATH = "finagent_runs.db"
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS runs (
-    id                TEXT PRIMARY KEY,
-    symbol            TEXT NOT NULL,
-    stock_name        TEXT NOT NULL,
-    start_date        TEXT NOT NULL,
-    end_date          TEXT NOT NULL,
-    initial_cash      REAL NOT NULL,
-    trader_preference TEXT NOT NULL,
-    status            TEXT NOT NULL,
-    result_json       TEXT,
-    error_msg         TEXT,
-    job_data_dir      TEXT NOT NULL,
-    trace_dir         TEXT,
-    created_at        TEXT NOT NULL
-)
-"""
-
-
-@contextmanager
-def _conn():
-    con = sqlite3.connect(_DB_PATH)
-    con.row_factory = sqlite3.Row
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
-
-
-def init_db() -> None:
-    with _conn() as con:
-        con.execute(_SCHEMA)
+from web.db import get_conn
 
 
 def create_run(
@@ -52,74 +15,309 @@ def create_run(
     end_date: str,
     initial_cash: float,
     trader_preference: str,
-    job_data_dir: str,
+    user_id: int | None = None,
+    llm_config_id: int | None = None,
+    status: str = "running",
+    # 하위 호환: 더 이상 사용 안 하지만 기존 호출자가 넘기는 경우 무시
+    job_data_dir: str | None = None,
     trace_dir: str | None = None,
 ) -> None:
-    with _conn() as con:
-        con.execute(
-            "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (run_id, symbol, stock_name, start_date, end_date, initial_cash,
-             trader_preference, "running", None, None,
-             job_data_dir, trace_dir, datetime.now().isoformat()),
-        )
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO runs
+                    (id, user_id, symbol, stock_name, start_date, end_date,
+                     initial_cash, trader_preference, llm_config_id, status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (run_id, user_id, symbol, stock_name, start_date, end_date,
+                 initial_cash, trader_preference, llm_config_id, status),
+            )
 
 
 def update_run_done(run_id: str, result: dict) -> None:
-    with _conn() as con:
-        con.execute(
-            "UPDATE runs SET status=?, result_json=? WHERE id=?",
-            ("done", json.dumps(result, ensure_ascii=False), run_id),
-        )
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status='done', result_json=%s, finished_at=NOW() WHERE id=%s",
+                (json.dumps(result, ensure_ascii=False), run_id),
+            )
 
 
 def update_run_error(run_id: str, error: str) -> None:
-    with _conn() as con:
-        con.execute(
-            "UPDATE runs SET status=?, error_msg=? WHERE id=?",
-            ("error", error, run_id),
-        )
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status='error', error_msg=%s, finished_at=NOW() WHERE id=%s",
+                (error, run_id),
+            )
+
+
+def update_run_running(run_id: str) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status='running', error_msg=NULL WHERE id=%s",
+                (run_id,),
+            )
+
+
+def get_resume_info(run_id: str) -> Optional[dict]:
+    """재실행에 필요한 run 파라미터와 마지막 거래일을 반환한다."""
+    import datetime as _dt  # noqa: PLC0415
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT r.symbol, r.stock_name, r.start_date, r.end_date,
+                       r.initial_cash, r.trader_preference, r.llm_config_id,
+                       MAX(t.date) as last_trade_date, r.user_id
+                FROM runs r
+                LEFT JOIN trades t ON t.run_id = r.id
+                WHERE r.id = %s
+                GROUP BY r.symbol, r.stock_name, r.start_date, r.end_date,
+                         r.initial_cash, r.trader_preference, r.llm_config_id, r.user_id
+                """,
+                (run_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+
+    def _to_date(v):
+        if v is None:
+            return None
+        return _dt.date.fromisoformat(str(v)) if isinstance(v, str) else v
+
+    return {
+        "symbol": row[0],
+        "stock_name": row[1],
+        "start_date": _to_date(row[2]),
+        "end_date": _to_date(row[3]),
+        "initial_cash": float(row[4]),
+        "trader_preference": row[5],
+        "llm_config_id": row[6],
+        "last_trade_date": _to_date(row[7]),
+        "user_id": row[8],
+    }
+
+
+def get_analysis_thread(run_id: str) -> Optional[list]:
+    """저장된 AI 분석 스레드(메시지 배열) 반환. run 없으면 None, 비어 있으면 []."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT analysis_thread FROM runs WHERE id=%s", (run_id,))
+            row = cur.fetchone()
+    if not row:
+        return None
+    return row[0] or []
+
+
+def append_analysis_message(run_id: str, role: str, content: str) -> None:
+    """스레드 끝에 메시지 한 개를 추가한다(role: 'assistant'|'user')."""
+    import datetime as _dt  # noqa: PLC0415
+    msg = {"role": role, "content": content, "ts": _dt.datetime.utcnow().isoformat() + "Z"}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET analysis_thread = COALESCE(analysis_thread,'[]'::jsonb) || %s::jsonb WHERE id=%s",
+                (json.dumps([msg], ensure_ascii=False), run_id),
+            )
+
+
+def clear_analysis_thread(run_id: str) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE runs SET analysis_thread='[]'::jsonb WHERE id=%s", (run_id,))
+
+
+def compare_key(run_ids: list[str]) -> str:
+    """비교 분석의 표준 키 — 입력 순서에 무관하게 동일한 조합이면 같은 키."""
+    return ",".join(sorted(run_ids))
+
+
+def get_comparison_thread(run_ids: list[str]) -> list:
+    """저장된 비교 분석 스레드 반환. 없으면 빈 리스트."""
+    key = compare_key(run_ids)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT thread FROM comparison_threads WHERE key=%s", (key,))
+            row = cur.fetchone()
+    return row[0] if row else []
+
+
+def append_comparison_message(
+    run_ids: list[str], role: str, content: str, prompt: Optional[str] = None
+) -> None:
+    """비교 스레드에 메시지 추가. 없으면 생성. prompt가 있으면 함께 저장(투명성용)."""
+    import datetime as _dt  # noqa: PLC0415
+    key = compare_key(run_ids)
+    msg: dict = {"role": role, "content": content, "ts": _dt.datetime.utcnow().isoformat() + "Z"}
+    if prompt is not None:
+        msg["prompt"] = prompt
+    msg_json = json.dumps([msg], ensure_ascii=False)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO comparison_threads (key, run_ids, thread)
+                VALUES (%s, %s, %s::jsonb)
+                ON CONFLICT (key) DO UPDATE
+                    SET thread = comparison_threads.thread || EXCLUDED.thread
+                """,
+                (key, sorted(run_ids), msg_json),
+            )
+
+
+def clear_comparison_thread(run_ids: list[str]) -> None:
+    key = compare_key(run_ids)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM comparison_threads WHERE key=%s", (key,))
+
+
+def list_queued_runs() -> list[dict]:
+    """status='queued'로 남은 run들을 등록 순서대로 반환한다(재시작 복구용)."""
+    import datetime as _dt  # noqa: PLC0415
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT r.id, r.symbol, r.stock_name, r.start_date, r.end_date,
+                       r.initial_cash, r.trader_preference,
+                       lc.provider, lc.model, lc.api_key, lc.base_url
+                FROM runs r
+                LEFT JOIN llm_configs lc ON lc.id = r.llm_config_id
+                WHERE r.status = 'queued'
+                ORDER BY r.created_at ASC
+                """
+            )
+            rows = cur.fetchall()
+
+    def _to_date(v):
+        return _dt.date.fromisoformat(str(v)) if isinstance(v, str) else v
+
+    return [
+        {
+            "run_id": row[0],
+            "symbol": row[1],
+            "stock_name": row[2],
+            "start": _to_date(row[3]),
+            "end": _to_date(row[4]),
+            "initial_cash": float(row[5]),
+            "trader_preference": row[6],
+            "llm": {"provider": row[7], "model": row[8],
+                    "api_key": row[9] or None, "base_url": row[10]},
+        }
+        for row in rows
+    ]
+
+
+def claim_queued_run(run_id: str) -> bool:
+    """'queued' 상태인 run을 원자적으로 'running'으로 전환한다.
+
+    삭제(취소)되었거나 이미 다른 상태면 0행이 갱신되어 False를 반환한다.
+    get_run_status 후 update 하는 TOCTOU 경쟁을 피한다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status='running', error_msg=NULL "
+                "WHERE id=%s AND status='queued'",
+                (run_id,),
+            )
+            return cur.rowcount > 0
+
+
+def fail_stale_running() -> int:
+    """서버 재시작 시 고아가 된 'running' run들을 'error'로 표시한다.
+
+    새 프로세스 시작 시점에는 실제로 실행 중인 백테스트가 없으므로
+    'running'으로 남아 있는 건 모두 이전 프로세스에서 중단된 것이다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status='error', error_msg='서버 재시작으로 중단됨' "
+                "WHERE status='running'"
+            )
+            return cur.rowcount
+
+
+def delete_run(run_id: str) -> bool:
+    """run_id에 해당하는 실행 기록과 관련 데이터를 삭제한다. 성공 시 True 반환."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM memory WHERE run_id = %s", (run_id,))
+            cur.execute("DELETE FROM trades WHERE run_id = %s", (run_id,))
+            cur.execute("DELETE FROM portfolio_state WHERE run_id = %s", (run_id,))
+            cur.execute("DELETE FROM runs WHERE id = %s", (run_id,))
+            return cur.rowcount > 0
 
 
 def list_runs() -> list[dict]:
-    with _conn() as con:
-        rows = con.execute(
-            "SELECT id, symbol, stock_name, start_date, end_date, initial_cash, "
-            "trader_preference, status, error_msg, created_at, result_json "
-            "FROM runs ORDER BY created_at DESC"
-        ).fetchall()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT r.id, r.symbol, r.stock_name, r.start_date, r.end_date,
+                       r.initial_cash, r.trader_preference, r.status,
+                       r.error_msg, r.created_at, r.result_json,
+                       u.username,
+                       lc.provider, lc.model
+                FROM runs r
+                LEFT JOIN users u ON u.id = r.user_id
+                LEFT JOIN llm_configs lc ON lc.id = r.llm_config_id
+                ORDER BY r.created_at DESC
+                """
+            )
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+
     result = []
-    for r in rows:
-        item = dict(r)
-        # KPI 요약만 포함 (equity_curve 제외)
-        if item.get("result_json"):
+    for row in rows:
+        item = dict(zip(cols, row))
+        item["created_at"] = str(item["created_at"])
+        rj = item.pop("result_json", None)
+        if rj:
             try:
-                res = json.loads(item["result_json"])
-                item["total_return_pct"] = res.get("total_return_pct")
-                item["sharpe_ratio"] = res.get("sharpe_ratio")
-                item["max_drawdown_pct"] = res.get("max_drawdown_pct")
-                item["benchmark_return_pct"] = res.get("benchmark_return_pct")
-                item["buy_count"] = res.get("buy_count")
-                item["sell_count"] = res.get("sell_count")
-                item["hold_count"] = res.get("hold_count")
+                res = json.loads(rj)
+                for k in ("total_return_pct", "sharpe_ratio", "max_drawdown_pct",
+                          "benchmark_return_pct", "buy_count", "sell_count", "hold_count"):
+                    item[k] = res.get(k)
             except Exception:
                 pass
-        del item["result_json"]
         result.append(item)
     return result
 
 
 def get_run(run_id: str) -> Optional[dict]:
-    with _conn() as con:
-        row = con.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-    if not row:
-        return None
-    item = dict(row)
-    if item.get("result_json"):
-        try:
-            item["result"] = json.loads(item["result_json"])
-        except Exception:
-            item["result"] = None
-    else:
-        item["result"] = None
-    del item["result_json"]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT r.*, u.username, lc.provider, lc.model
+                FROM runs r
+                LEFT JOIN users u ON u.id = r.user_id
+                LEFT JOIN llm_configs lc ON lc.id = r.llm_config_id
+                WHERE r.id = %s
+                """,
+                (run_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            cols = [d[0] for d in cur.description]
+
+    item = dict(zip(cols, row))
+    item["created_at"] = str(item["created_at"])
+    rj = item.pop("result_json", None)
+    item["result"] = json.loads(rj) if rj else None
     return item
+
+
+def init_db() -> None:
+    """하위 호환 — app.py 가 init_schema() 로 전환하기 전까지 유지."""
+    pass

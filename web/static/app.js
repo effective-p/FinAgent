@@ -1,14 +1,42 @@
 /* FinAgent Web UI — SSE 클라이언트 + DOM 조작 */
 'use strict';
 
-// ── 날짜 초기값 설정 ──────────────────────────────────────────────────────────
-(function setDefaultDates() {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const ymd = yesterday.toISOString().slice(0, 10);
-  const endInput = document.getElementById('end');
-  if (endInput && !endInput.value) endInput.value = ymd;
+// ── 인증 ─────────────────────────────────────────────────────────────────────
+function getToken() { return localStorage.getItem('fa_token'); }
+function authHeaders() {
+  return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' };
+}
+function navLogout() {
+  localStorage.removeItem('fa_token');
+  localStorage.removeItem('fa_user');
+  window.location.href = '/login.html';
+}
+
+(function checkAuth() {
+  if (!getToken()) { window.location.href = '/login.html'; }
+  const u = localStorage.getItem('fa_user');
+  const el = document.getElementById('nav-user');
+  if (el && u) el.textContent = u;
 })();
+
+// ── LLM 드롭다운 로드 ────────────────────────────────────────────────────────
+async function loadLLMConfigs() {
+  try {
+    const res = await fetch('/api/llm-configs', { headers: authHeaders() });
+    if (!res.ok) return;
+    const configs = await res.json();
+    const sel = document.getElementById('llm_config_id');
+    if (!sel) return;
+    configs.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.name} (${c.provider}/${c.model})`;
+      sel.appendChild(opt);
+    });
+  } catch { /* ignore */ }
+}
+loadLLMConfigs();
+
 
 // ── 파이프라인 노드 관리 ───────────────────────────────────────────────────────
 const PIPELINE_STEP_IDS = [
@@ -85,34 +113,54 @@ form.addEventListener('submit', async (e) => {
   hideError();
   tradeLog = [];
 
+  const llmSel = document.getElementById('llm_config_id');
+  const llmConfigId = llmSel && llmSel.value ? parseInt(llmSel.value) : null;
+  const llmLabel = llmSel && llmSel.value
+    ? llmSel.options[llmSel.selectedIndex].textContent.split('(')[0].trim()
+    : 'Claude';
+
+  const stockSel = document.getElementById('stock_select');
+  const [symbol, stockName] = stockSel.value ? stockSel.value.split('|') : ['', ''];
+  if (!symbol) { showError('종목을 선택하세요.'); submitBtn.disabled = false; submitBtn.textContent = '백테스트 실행'; return; }
+
   const data = {
-    symbol:           form.symbol.value.trim(),
-    stock_name:       form.stock_name.value.trim(),
+    symbol:           symbol,
+    stock_name:       stockName,
     start:            form.start.value,
     end:              form.end.value,
     initial_cash:     parseFloat(form.initial_cash.value),
     trader_preference: form.trader_preference.value,
+    llm_config_id:    llmConfigId,
   };
 
   submitBtn.disabled = true;
   submitBtn.textContent = '백테스트 시작 중…';
 
+  // 파이프라인 노드에 모델명 반영
+  document.querySelectorAll('.llm-label').forEach(el => {
+    el.textContent = el.textContent.replace('LLM', llmLabel);
+  });
+
+  // 즉시 진행 패널 표시 (POST 응답 전에)
+  showProgressPanel(data);
+
   try {
     const res = await fetch('/api/backtest', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(data),
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || '알 수 없는 오류가 발생했습니다.');
+      const detail = Array.isArray(err.detail)
+        ? err.detail.map(e => e.msg || JSON.stringify(e)).join(', ')
+        : (err.detail || '알 수 없는 오류가 발생했습니다.');
+      throw new Error(detail);
     }
 
     const { job_id, stream_url } = await res.json();
     currentJobId = job_id;
-
-    showProgressPanel();
     connectSSE(stream_url, data);
   } catch (err) {
     showError(err.message);
@@ -121,35 +169,131 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
+// ── 일괄 실행 목록 (장바구니) ────────────────────────────────────────────────
+let batchItems = [];
+
+function readFormConfig() {
+  const llmSel = document.getElementById('llm_config_id');
+  const llmConfigId = llmSel && llmSel.value ? parseInt(llmSel.value) : null;
+  const llmLabel = llmSel && llmSel.value
+    ? llmSel.options[llmSel.selectedIndex].textContent.split('(')[0].trim()
+    : '.env 기본값';
+  const stockSel = document.getElementById('stock_select');
+  const [symbol, stockName] = stockSel.value ? stockSel.value.split('|') : ['', ''];
+  return {
+    symbol,
+    stock_name: stockName,
+    start: form.start.value,
+    end: form.end.value,
+    initial_cash: parseFloat(form.initial_cash.value),
+    trader_preference: form.trader_preference.value,
+    llm_config_id: llmConfigId,
+    _llmLabel: llmLabel,
+  };
+}
+
+function renderBatchList() {
+  const list = document.getElementById('batch-list');
+  const cnt = document.getElementById('batch-count');
+  const runBtn = document.getElementById('batch-run-btn');
+  cnt.textContent = batchItems.length + '개';
+  runBtn.disabled = batchItems.length === 0;
+  runBtn.textContent = batchItems.length ? `일괄 실행 (${batchItems.length})` : '일괄 실행';
+  if (!batchItems.length) {
+    list.innerHTML = '<div class="batch-empty">목록이 비어 있습니다. 설정 후 "+ 목록에 추가"를 누르세요.</div>';
+    return;
+  }
+  list.innerHTML = batchItems.map((it, i) => `
+    <div class="batch-item">
+      <span class="batch-item-stock">${escHtml(it.stock_name)} <span class="batch-item-sym">${escHtml(it.symbol)}</span></span>
+      <span class="batch-item-period">${it.start} ~ ${it.end}</span>
+      <span class="batch-item-llm">${escHtml(it._llmLabel)}</span>
+      <button type="button" class="batch-remove" data-i="${i}" title="제거">✕</button>
+    </div>`).join('');
+}
+
+document.getElementById('add-batch-btn').addEventListener('click', () => {
+  const cfg = readFormConfig();
+  if (!cfg.symbol) { showError('종목을 선택하세요.'); return; }
+  if (!cfg.start || !cfg.end) { showError('기간을 입력하세요.'); return; }
+  hideError();
+  batchItems.push(cfg);
+  renderBatchList();
+});
+
+document.getElementById('batch-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('.batch-remove');
+  if (!btn) return;
+  batchItems.splice(parseInt(btn.dataset.i), 1);
+  renderBatchList();
+});
+
+document.getElementById('batch-run-btn').addEventListener('click', async () => {
+  if (!batchItems.length) return;
+  const runBtn = document.getElementById('batch-run-btn');
+  runBtn.disabled = true;
+  runBtn.textContent = '대기열 등록 중…';
+  try {
+    const items = batchItems.map(({ _llmLabel, ...rest }) => rest);
+    const res = await fetch('/api/backtest/batch', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      const detail = Array.isArray(err.detail)
+        ? err.detail.map(e => e.msg || JSON.stringify(e)).join(', ')
+        : (err.detail || '알 수 없는 오류');
+      throw new Error(detail);
+    }
+    const json = await res.json();
+    batchItems = [];
+    renderBatchList();
+    alert(`${json.queued}개 백테스트가 대기열에 등록되었습니다. 순차적으로 실행됩니다.`);
+    window.location.href = '/review.html';
+  } catch (e) {
+    showError('일괄 실행 오류: ' + e.message);
+    runBtn.disabled = false;
+    runBtn.textContent = `일괄 실행 (${batchItems.length})`;
+  }
+});
+
 // ── SSE 연결 ──────────────────────────────────────────────────────────────────
 function connectSSE(streamUrl, formData) {
   if (eventSource) eventSource.close();
 
-  eventSource = new EventSource(streamUrl);
+  const url = streamUrl + '?token=' + encodeURIComponent(getToken());
+  const es = new EventSource(url);
+  eventSource = es;
 
-  eventSource.onmessage = (evt) => {
+  es.onmessage = (evt) => {
     let data;
     try { data = JSON.parse(evt.data); } catch { return; }
 
     if (data.type === 'step') {
-      activatePipelineStep(data.step);
+      if (data.step === 'waiting') {
+        progressLabel.textContent = '다른 백테스트 실행 중 — 대기 중…';
+      } else {
+        activatePipelineStep(data.step);
+      }
     } else if (data.type === 'progress') {
       completePipelineDay();
       handleProgress(data);
     } else if (data.type === 'done') {
-      eventSource.close();
+      es.close();
       handleDone(data.result, formData);
     } else if (data.type === 'error') {
-      eventSource.close();
+      es.close();
       showError(data.message);
       submitBtn.disabled = false;
       submitBtn.textContent = '백테스트 실행';
     }
   };
 
-  eventSource.onerror = () => {
-    // EventSource 자동 재연결 — 명시적 종료 아니면 재연결 허용
-    if (eventSource.readyState === EventSource.CLOSED) {
+  es.onerror = () => {
+    // 이 인스턴스(es)가 실제로 닫혔을 때만 오류 표시
+    if (es.readyState === EventSource.CLOSED) {
       showError('서버 연결이 끊겼습니다. 페이지를 새로고침하여 결과를 확인하세요.');
     }
   };
@@ -169,7 +313,7 @@ function handleProgress(data) {
   item.innerHTML = `
     <span class="log-date">${data.date}</span>
     <span class="badge badge-${data.action}">${data.action}</span>
-    <span class="log-reason">${escHtml(data.reasoning)}</span>
+    <span class="log-reason">${escHtml(cleanReasoning(data.reasoning))}</span>
   `;
   logList.appendChild(item);
   logList.scrollTop = logList.scrollHeight;
@@ -263,7 +407,7 @@ function renderTradeTable() {
     tr.innerHTML = `
       <td>${t.date}</td>
       <td><span class="badge badge-${t.action}">${t.action}</span></td>
-      <td class="td-reason">${escHtml(t.reasoning)}</td>
+      <td class="td-reason">${escHtml(cleanReasoning(t.reasoning))}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -328,7 +472,7 @@ function showChart() {
 }
 
 // ── 패널 전환 ─────────────────────────────────────────────────────────────────
-function showProgressPanel() {
+function showProgressPanel(fd) {
   formPanel.style.display = 'none';
   progressPanel.style.display = 'block';
   resultsPanel.style.display = 'none';
@@ -337,6 +481,14 @@ function showProgressPanel() {
   progressPct.textContent = '0%';
   progressLabel.textContent = '준비 중…';
   resetPipeline();
+  const info = document.getElementById('progress-run-info');
+  if (info) {
+    if (fd && fd.stock_name) {
+      info.textContent = `${fd.stock_name} (${fd.symbol})  ${fd.start} ~ ${fd.end}`;
+    } else {
+      info.textContent = '';
+    }
+  }
 }
 
 function showResultsPanel() {
@@ -356,6 +508,35 @@ function showError(msg) {
 function hideError() {
   errorBanner.style.display = 'none';
 }
+
+// ── 재실행 resume 처리 (review 페이지에서 넘어온 경우) ───────────────────────
+(function checkResumeParam() {
+  const params = new URLSearchParams(window.location.search);
+  const jobId = params.get('resume_job');
+  const streamUrl = params.get('resume_stream');
+  if (!jobId || !streamUrl) return;
+  history.replaceState({}, '', '/');
+  currentJobId = jobId;
+  tradeLog = [];
+  const formData = {
+    stock_name: params.get('resume_stock') || '',
+    symbol:     params.get('resume_symbol') || '',
+    start:      params.get('resume_start') || '',
+    end:        params.get('resume_end') || '',
+  };
+  const resumeRunId = params.get('resume_run_id');
+  showProgressPanel(formData);
+  if (resumeRunId) {
+    fetch(`/review/api/runs/${resumeRunId}/days`)
+      .then(r => r.json())
+      .then(days => {
+        days.forEach(d => tradeLog.push({ date: d.date, action: d.action, reasoning: d.reasoning || '' }));
+        renderTradeTable();
+      })
+      .catch(() => {});
+  }
+  connectSSE(streamUrl, formData);
+})();
 
 // ── 새 백테스트 버튼 ──────────────────────────────────────────────────────────
 document.getElementById('btn-new').addEventListener('click', () => {
@@ -378,4 +559,14 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// LLM이 XML 형식으로 출력한 reasoning에서 태그를 벗겨 깔끔히 표시
+function cleanReasoning(text) {
+  if (!text) return '';
+  let s = String(text);
+  const m = s.match(/<analysis>([\s\S]*?)<\/analysis>/i);
+  if (m) s = m[1];
+  s = s.replace(/<\/?(?:output|analysis|reasoning|action|decision|summary|short_term[^>]*|medium_term[^>]*|long_term[^>]*)[^>]*>/gi, '');
+  return s.trim();
 }
