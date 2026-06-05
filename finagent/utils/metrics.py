@@ -154,21 +154,12 @@ def plot_performance(
 ) -> str:
     """FinAgent 자산곡선 vs Buy&Hold + Drawdown 차트를 PNG로 저장한다."""
 
-    # 한글 폰트 설정: pykrx 내장 NanumBarunGothic → Windows → macOS → Linux 순
+    # 한글 폰트 설정: Windows → macOS → Linux 순으로 시도
     import matplotlib.font_manager as fm
-    import os as _os
-    try:
-        import pykrx as _pykrx
-        _nanum = _os.path.join(_os.path.dirname(_pykrx.__file__), "NanumBarunGothic.ttf")
-        if _os.path.isfile(_nanum):
-            fm.fontManager.addfont(_nanum)
-    except Exception:
-        pass
     _available = {f.name for f in fm.fontManager.ttflist}
-    for _font in ["NanumBarunGothic", "Malgun Gothic", "Apple SD Gothic Neo", "NanumGothic", "DejaVu Sans"]:
+    for _font in ["Malgun Gothic", "Apple SD Gothic Neo", "NanumGothic", "DejaVu Sans"]:
         if _font in _available:
             plt.rcParams["font.family"] = _font
-            plt.rcParams["axes.unicode_minus"] = False
             break
 
     fig, (ax1, ax2) = plt.subplots(

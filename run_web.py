@@ -12,12 +12,10 @@ load_dotenv()
 import uvicorn
 
 if __name__ == "__main__":
-    import os
-    port = int(os.getenv("PORT", 8000))
     uvicorn.run(
         "web.app:app",
         host="0.0.0.0",
-        port=port,
+        port=8000,
         workers=1,   # 인-프로세스 job store 사용 — 반드시 1
         reload=False,
     )
