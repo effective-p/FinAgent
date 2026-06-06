@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -14,6 +16,13 @@ from pykrx import stock as krx
 from finagent.utils.schemas import NewsItem, TradeAction
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def _silent_pykrx():
+    """pykrx 데코레이터가 빈 응답 시 stdout 으로 찍는 'Error occurred ...' 메시지 차단."""
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        yield
 
 
 class DataFetcher:
@@ -34,7 +43,8 @@ class DataFetcher:
         fromdate = start.strftime("%Y%m%d")
         todate = end.strftime("%Y%m%d")
 
-        df = krx.get_market_ohlcv_by_date(fromdate, todate, symbol)
+        with _silent_pykrx():
+            df = krx.get_market_ohlcv_by_date(fromdate, todate, symbol)
 
         if df is None or df.empty:
             raise ValueError(f"No price data for {symbol}")
@@ -131,7 +141,8 @@ class DataFetcher:
         todate = end.strftime("%Y%m%d")
 
         try:
-            df = krx.get_market_trading_value_by_investor(fromdate, todate, symbol)
+            with _silent_pykrx():
+                df = krx.get_market_trading_value_by_investor(fromdate, todate, symbol)
             if df is None or df.empty:
                 return "투자자 동향 데이터 없음"
 
@@ -184,7 +195,8 @@ class DataFetcher:
         todate = end.strftime("%Y%m%d")
 
         try:
-            df = krx.get_market_fundamental_by_date(fromdate, todate, symbol)
+            with _silent_pykrx():
+                df = krx.get_market_fundamental_by_date(fromdate, todate, symbol)
             if df is None or df.empty:
                 return "기본 투자지표 데이터 없음"
 
